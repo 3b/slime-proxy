@@ -2,20 +2,20 @@
 
 (list 1 () 1)
 
-((@ *function introspect)                )
+((@ *function introspect))
 
 (progn
   (defun lisp-implementation-version ()
     (@ navigator user-agent))
 )
-
+(defun foo () "bat ")
 (lisp-implementation-version)
 (Defun foo (a b) (+ 1 a 2 (* b 3)))
-(foo 3 4 )
+(foo 3 4)
 (@ navigator app-code-name)
 
-((@ canvas get-context)          ) 
-((@ document get-element-by-id)    ) 
+((@ canvas get-context) )
+((@ document get-element-by-id)    )
 ((@ swfobject register-object)   )
 ((@ ((@ document get-element-by-id ) "canvas") get-context)   )
 
@@ -105,11 +105,16 @@
  )
   )
 
-((@ ctx translate) -45 -45)
+((@ ctx translate) +15 +15)
 
 (progn
-  ((@ ctx save))
-  ((@ ctx translate) (- (random 50) 25) (- (random 50) 25))
+  ((ps:@ ctx save))
+  (setf (@ ctx global-alpha) 0.03)
+  ;;((@ ctx translate) +45 +45)
+  ;;((@ ctx rotate) (* 135 (/ pi 180)))
+  ;;((@ ctx translate) -45 -45)
+  ((ps:@ ctx translate) (- (random 50.0) 25) (- (random 50.0) 25))
+
   (draw)
   ((@ ctx restore)))
 

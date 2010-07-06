@@ -66,6 +66,7 @@
        do (handle-frame server client data)))
 
 )
+#++
 (sb-concurrency:send-message (slot-value  (car (gethash "/swank" ws::*resources*)) 'ws::read-queue) '(nil :kill))
 
 
