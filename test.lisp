@@ -1,3 +1,4 @@
+;;; -*- Mode: LISP; slime-proxy-proxy-connection: t -*-
 (in-package :proxy-test)
 
 (list 1 () 1)
@@ -15,8 +16,8 @@
 (@ navigator app-code-name)
 
 ((@ canvas get-context) )
-((@ document get-element-by-id)    )
-((@ swfobject register-object)   )
+((@ document get-element-by-id))
+((@ swfobject register-object) )
 ((@ ((@ document get-element-by-id ) "canvas") get-context)   )
 
 (alert "foo1")

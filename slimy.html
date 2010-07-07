@@ -19,6 +19,11 @@
     
     // Set URL of your WebSocketMain.swf here:
     WebSocket.__swfLocation = "/wsjs/WebSocketMain.swf";
+    WebSocket.__debug = true;
+    // for newer versions of web-socket-js
+    WEB_SOCKET_SWF_LOCATION = "/wsjs/WebSocketMain.swf";
+    // Set this to dump debug message from Flash to console.log:
+    WEB_SOCKET_DEBUG = true;
 
     var ws;
     var count = 0;
@@ -60,6 +65,9 @@
       };
       ws.onclose = function() {
         output("onclose");
+      };
+      ws.onerror = function() {
+        output("onerror");
       };
 
     }

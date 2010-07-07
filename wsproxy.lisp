@@ -92,20 +92,19 @@
 #++
 (run-swank-proxy-server)
 
-;; entry point for buildapp deployment
-#++
-(defun main (argv)
-  (declare (ignore argv))
-  (sb-thread:make-thread
-   (lambda ()
-     (ws::run-server 12345))
-   :name "socket server")
+(defun start-proxy-server ()
+  (let ((con swank::*emacs-connection*))
+    (sb-thread:make-thread
+    (lambda ()
+      (let ((swank::*emacs-connection* con))
+       (ws::run-server 12345)))
+    :name "socket server")
 
-  (sb-thread:make-thread
-   (lambda ()
-     (run-swank-proxy-server))
-   :name "resource handler")
-  (sb-impl::toplevel-repl nil))
+    (sb-thread:make-thread
+     (lambda ()
+       (let ((swank::*emacs-connection* con))
+         (run-swank-proxy-server)))
+     :name "resource handler")))
 
 #++
 (defun swank (&key (dont-close nil))
