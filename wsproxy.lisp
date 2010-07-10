@@ -38,8 +38,9 @@
        (if id
            (let ((cont (gethash id *continuations*)))
              (if cont
-                 (progn
-                   (funcall cont result err))
+                 (if err
+                     (funcall cont nil err)
+                     (funcall cont t result))
                  #++(format t "got cont id ~s but no cont?~%" id))
              (remhash id *continuations*))
            (swank::send-to-emacs `(:write-string ,s))))))

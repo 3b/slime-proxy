@@ -1,5 +1,5 @@
 (defsystem :slime-proxy
-  :depends-on (:parenscript :yason :clws)
+  :depends-on (:clws :parenscript :yason)
   :serial t
   :components ((:file "wsproxy")
                (:file "swank-proxy")))
