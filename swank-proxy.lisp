@@ -4,12 +4,17 @@
   "Used for debugging purposes.")
 
 (defclass proxy-channel (channel)
-  ()
+  ((target :initarg :target :initform nil :accessor channel-target
+           :documentation "The target for messages delivered through this
+           proxy channel. "))
   (:documentation "Subclass of the main slime channel class used for
   slime-proxy."))
 
+(defclass proxy-listener-channel (proxy-channel listener-channel)
+  ())
+
 ;; fixme: this should be implemented in swank-proxy-ps, not here.
-;; Maybe achieve this by by generic function--the main problem now
+;; Maybe achieve this by by generic function--the main problem now is
 ;; achieving the propery dynamic bindings for specials needed by the
 ;; parenscript proxy target
 (defvar *arglist-dispatch-hooks* nil)
@@ -58,7 +63,7 @@ proxy-eval. "
              (mapcar 'eval (cdr form)))))
 
 
-(defun proxy-eval-for-emacs (form buffer-package id)
+(defun proxy-eval-for-emacs (form channel thread buffer-package id)
   "Binds *BUFFER-PACKAGE* to BUFFER-PACKAGE and proxy-evaluates FORM.
 Return the result to the continuation ID.  Errors are trapped and
 invoke our debugger.
@@ -68,18 +73,26 @@ form, uses PROXY-EVAL-FORM"
   (declare (optimize (debug 3)))
   (let* ((b (guess-buffer-package buffer-package))
          (brt (guess-buffer-readtable buffer-package))
+         (pc (cons id *pending-continuations*))
+         (conn *emacs-connection*)
          (*buffer-package* b)
          (*buffer-readtable* brt)
-         (*pending-continuations* (cons id *pending-continuations*)))
+         (*pending-continuations* pc))
     (check-type *buffer-package* package)
     (check-type *buffer-readtable* readtable)
+    #+nil
+    (format t "proxy-eval-for-emacs connection: ~A / ~A~%" conn *emacs-connection*)
     (flet ((cont (ok result)
              ;; fixme: make sure that we are binding the proper specials
+             ;; fixme what about the not-okay case?
                (when ok
                  (let ((*buffer-package* b)
-                       (*buffer-readtable* brt))
+                       (*buffer-readtable* brt)
+                       (*pending-continuations* pc)
+                       (*emacs-connection* conn))
+                   #+nil(format t "proxy-eval... connection (continuation): ~A / ~A~%" conn *emacs-connection*)
                    (run-hook *pre-reply-hook*)
-                   (send-to-emacs `(:return ,(current-thread)
+                   (send-to-emacs `(:return ,thread
                                             ,(if ok
                                                  `(:ok ,result)
                                                  `(:abort))
@@ -93,7 +106,8 @@ form, uses PROXY-EVAL-FORM"
               (check-type *buffer-readtable* readtable)
               ;; APPLY would be cleaner than EVAL. 
               ;; (setq result (apply (car form) (cdr form)))
-              (setq result (with-slime-interrupts (proxy-eval-form form :ps #'cont)))
+              (setq result (with-slime-interrupts (proxy-eval-form form (channel-target channel)
+                                                                   #'cont)))
               #++(run-hook *pre-reply-hook*)
               (setq ok t))
          (when (not (eq result :async))
@@ -101,27 +115,38 @@ form, uses PROXY-EVAL-FORM"
 
 ;;; All slime-proxy events are sent through the :proxy method, bundled
 ;;; with a particular command and its arguments
-(define-channel-method :proxy (c args)
-  (setf *proxy-cmd* (list c args))
-  (format t "proxy ~s~%" (list c args))
+(define-channel-method :proxy ((channel proxy-channel) args)
+  (setf *proxy-cmd* (list channel args))
+  #+nil(format t "proxy ~s~%" (list channel args))
   (case (car args)
     (:emacs-rex
      (destructuring-bind (form package thread id &rest r) (cdr args)
-       (declare (ignore r thread))
+       (declare (ignore r))
        ;(format t "form ~s~% package ~s~% id ~S~%" form package id)
-       (proxy-eval-for-emacs form package id)
+       (proxy-eval-for-emacs form channel thread package id)
        #++(let ((swank-backend::*proxy-interfaces* (make-hash-table)))
          (eval-for-emacs form package id))))))
 
 
 ;; SPAWN-PROXY-THREAD and CREATE-PROXY-LISTENER set up the swank-proxy
 ;; thread that listens in on SWANK events and  
-(defslimefun create-proxy-listener (remote)
+(defgeneric proxy-create-channel (target &key remote)
+  (:documentation "Returns an instance of a proxy-channel connected to
+the given remote instance.
+
+fixme: this function has a very tentative interface"))
+
+(defmethod proxy-create-channel (target &key remote)
+  (make-instance 'proxy-listener-channel
+                 :target target
+                 :remote remote
+                 :env (initial-listener-bindings remote)))
+
+(defslimefun create-proxy-listener (remote target)
+  ;; fixme: move most of this into proxy-create-channel
   (let* ((pkg *package*)
          (conn *emacs-connection*)
-         (ch (make-instance 'listener-channel
-                            :remote remote
-                            :env (initial-listener-bindings remote))))
+         (ch (proxy-create-channel (intern (string-upcase target) :keyword) :remote remote)))
 
     (with-slots (thread id) ch
       (when (use-threads-p)
@@ -130,15 +155,6 @@ form, uses PROXY-EVAL-FORM"
             (thread-id thread)
             (package-name pkg)
             (package-string-for-prompt pkg)))))
-
-(defun create-proxy-listener ()
-  "Analogous to SWANK:CREATE-LISTENER"
-  (let ((ch (make-instance 'proxy-channel)))
-    (with-slots (thread id) ch
-      (when (use-threads-p)
-        (setf thread (spawn-proxy-thread ch *emacs-connection*)))
-      (list id (thread-id thread)))))
-
 
 (defun spawn-proxy-thread (channel connection)
   (spawn (lambda ()

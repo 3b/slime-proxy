@@ -33,40 +33,56 @@
 ;(slime-def-connection-var slime-proxy-connection nil
 ;  "connection used as a proxy by this connection.")
 
+(define-slime-contrib slime-proxy
+  "Interaction with other environments through SLIME and swank."
+  (:authors "3b"
+            "Red Daly            <reddaly@gmail.com>")
+  (:license "elisp code is GPL, Common Lisp Code is BSD?")
+  (:slime-dependencies );slime-proxy)
+  (:swank-dependencies swank-proxy)
+  (:on-load
+   ))
+
 (defgroup slime-proxy nil
-  "Interaction with the Superior Lisp Environment."
+  "Interaction with other environments through SLIME."
   :prefix "slime-proxy-"
   :group 'slime)
 
 (defvar slime-proxy-event-loop nil)
 (defvar slime-proxy-most-recent-channel-id 1)
+
 (make-variable-buffer-local
  (defvar slime-proxy-proxy-connection nil))
 
-(defun slime-proxy-open-listener ()
+(defun slime-proxy-open-listener (target)
   "Create a new listener window."
-  (interactive)
+  (interactive "sTarget for proxy: ")
+  ;; create emacs-side channel struct
   (let ((channel (slime-make-channel nil "slime-proxy-channel")))
+    ;; now create the swank-side proxy listener
     (slime-eval-async
-     `(swank:create-proxy-listener ,(slime-channel.id channel))
+     `(swank:create-proxy-listener ,(slime-channel.id channel) ,target)
      (slime-rcurry 
       (lambda (result channel)
-	(destructuring-bind (remote thread-id package prompt) result
-          (setq slime-proxy-most-recent-channel-id remote)
-	  (pop-to-buffer (generate-new-buffer (slime-buffer-name :proxy-scratch)))
-          (slime-repl-mode)
-          (setq slime-proxy-proxy-connection t)
-	  ;(setq slime-current-thread thread-id)
-	  (setq slime-buffer-connection (slime-connection))
-	  (set (make-local-variable 'slime-proxy-remote-channel) remote)
-	  (slime-channel-put channel 'buffer (current-buffer))
-	  (slime-reset-repl-markers)
-	  ;(slime-channel-send channel `(:prompt ,package ,prompt))
-          (setf slime-buffer-package package)
-          (letf (((slime-lisp-package-prompt-string) (or prompt "PAREN>")))
-            (slime-repl-insert-prompt))
-	  (slime-repl-show-maximum-output)))
+        (let ((slime-dispatching-connection (slime-connection)))
+          (destructuring-bind (remote thread-id package prompt) result
+            (setq slime-proxy-most-recent-channel-id remote)
+            (pop-to-buffer (generate-new-buffer (slime-buffer-name :proxy-scratch)))
+            (slime-repl-mode)
+            (setq slime-proxy-proxy-connection t)
+            (setq slime-current-thread thread-id)
+            ;(message "New buffer with slime connection=%s" (slime-connection))
+            (setq slime-buffer-connection (slime-connection))
+            (set (make-local-variable 'slime-proxy-remote-channel) remote)
+            (slime-channel-put channel 'buffer (current-buffer))
+            (slime-reset-repl-markers)
+                                        ;(slime-channel-send channel `(:prompt ,package ,prompt))
+            (setf slime-buffer-package package)
+            (letf (((slime-lisp-package-prompt-string) (or prompt "PAREN")))
+              (slime-repl-insert-prompt))
+            (slime-repl-show-maximum-output))))
       channel))))
+
 
 (defun slime-proxy-event-hook-function (event)
   (if (and slime-proxy-proxy-connection
@@ -83,12 +99,14 @@
            (when (and (slime-use-sigint-for-interrupt) (slime-busy-p))
              (slime-display-oneliner "; pipelined request... %S" form))
            (let ((id (incf (slime-continuation-counter))))
-             (message "proxied message, id=%s" id)
-             (message "proxied message, form=%s" form)
+             ;(message "proxied message, id=%s" id)
+             ;(message "proxied message, form=%s" form)
              (slime-send `(:emacs-channel-send
                            ,slime-proxy-most-recent-channel-id
                            (:proxy (:emacs-rex ,form ,package ,thread ,id))) )
              (push (cons id continuation) (slime-rex-continuations))
+             ;(message "adjusted continuations (added %i for %s): %s" 
+             ;         id (slime-connection) (mapcar 'car (slime-rex-continuations)))
              (slime-recompute-modelines)))
           ((:buffer-first-change)
            nil)
@@ -100,7 +118,7 @@
         t)
       nil))
 
-(add-hook 'slime-event-hooks 'slime-proxy-event-hook-function )
+(add-hook 'slime-event-hooks 'slime-proxy-event-hook-function)
 
 ;;; todo: on slime-net-process-close-hooks, check for proxy connection closing
 
