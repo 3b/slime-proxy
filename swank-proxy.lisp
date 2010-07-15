@@ -1,4 +1,5 @@
 (in-package #:swank)
+
 (defvar *proxy-cmd*)
 (defclass proxy-channel (channel)
   ()
@@ -11,7 +12,7 @@
   #++(let ((*package* (find-package :keyword)))
     (format t "operator-p ~s = ~s~%" op  (ps::parenscript-function-p op)))
   (ps::parenscript-function-p op))
-(fmakunbound 'proxy-eval)
+
 (defgeneric proxy-eval (op proxy-target continuation &rest args))
 (defmethod proxy-eval ((op t) (proxy-target t) cont &rest args)
   (format t "unknown proxy-eval command ~s or proxy target ~s~%" (cons op args) proxy-target)

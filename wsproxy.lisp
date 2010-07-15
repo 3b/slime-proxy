@@ -1,92 +1,85 @@
 (defpackage #:swank-proxy-ws
-    (:use :cl)
+    (:use :cl :anaphora)
     (:export #:main))
+
 (in-package #:swank-proxy-ws)
 
-(defparameter *send-marker* (gensym))
+(defun splog (format-str &rest format-args)
+  "Logging function used by swank proxy."
+  (apply #'format t
+         (concatenate 'string "SWANK-PROXY: " format-str)
+         format-args))
+
 (defparameter *continuations* (make-hash-table))
 (defparameter *continuations-next-id* 0)
 
-(defclass swank-proxy-server (ws::ws-resource)
-  ((ws::read-queue :allocation :class :initform (sb-concurrency:make-mailbox :name "swank-proxy-queue"))
-   (clients :initform () :accessor clients)))
+(defclass swank-proxy-resource (ws:ws-resource)
+  ((clients :initform () :accessor resource-clients)
+   (clients-lock :initform (bordeaux-threads:make-lock) :reader resource-clients-lock
+                 :documentation "Required to access the clients list")))
 
-(setf (gethash "/swank" ws::*resources*)
-      (list (make-instance 'swank-proxy-server)
-            (ws::origin-prefix "http://127.0.0.1" "http://localhost")))
+(ws:register-global-resource 
+ "/swank"
+ (make-instance 'swank-proxy-resource)
+ (ws::origin-prefix "http://127.0.0.1" "http://localhost"))
 
-(defmethod ws::ws-accept-connection ((res swank-proxy-server) resource-name headers client)
-  (format t "add client ~s~%" client)
-  (push client (clients res))
-  (values (slot-value res 'ws::read-queue) nil nil nil))
+(defun run-swank-proxy-server ()
+  "Starts up a swank proxy server in the current thread."
+  (let ((res (ws:find-global-resource "/swank")))
+    (setf (resource-clients res) nil)
+    (ws:run-resource-listener res)))
 
-(defun handle-frame (server client data)
-  (cond
-    ( (or (eq data :eof)
-          (eq data :dropped))
-     (format t "removed client ~s~%" client)
-      (setf (clients server) (delete client (clients server)))
-      (ws::write-to-client client :close))
-    ( (find client (clients server))
-     (let* ((s (format nil "[~s] ~s~%" (position client (clients server)) data))
-            (r (yason:parse data))
-            (result (gethash "RESULT" r))
-            (id (gethash "ID" r))
-            (err (gethash "ERROR" r)))
-       #++(format t "got frame ~s (~s)~%" data s)
-       #++(format t "got response ~s . ~s / ~s~%" result id err)
-       (if id
-           (let ((cont (gethash id *continuations*)))
-             (if cont
-                 (if err
-                     (funcall cont nil err)
-                     (funcall cont t result))
-                 #++(format t "got cont id ~s but no cont?~%" id))
-             (remhash id *continuations*))
-           (swank::send-to-emacs `(:write-string ,s))))))
-  )
+(defmethod ws:resource-accept-connection ((res swank-proxy-resource) resource-name headers client)
+  (splog "Swank add client ~s~%" client)
+  (push client (resource-clients res))
+  (equal "/swank" resource-name))
 
-(defun handle-send-from-proxy (server client data cont)
-  (declare (ignore client))
-  (if (clients server)
-      (ws::write-to-clients (clients server) data)
-      (when cont
-        (funcall cont nil t))))
+(defmethod ws:resource-client-disconnected ((resource swank-proxy-resource) client)
+  (setf (resource-clients resource) (remove client (resource-clients resource))))
 
-(Defun run-swank-proxy-server ()
-  (let* ((server (car (gethash "/swank" ws::*resources*)))
-         (q (slot-value server 'ws::read-queue)))
-    (sb-concurrency:receive-pending-messages q)
-    (setf (clients server) nil)
-    (loop
-       for (client data) = (sb-concurrency:receive-message q)
-       until (eq data :kill)
-       when (eq client *send-marker*)
-       do (handle-send-from-proxy server (car data) (second data) (third data))
-       when client
-       do (handle-frame server client data)))
-
-)
-#++
-(sb-concurrency:send-message (slot-value  (car (gethash "/swank" ws::*resources*)) 'ws::read-queue) '(nil :kill))
-
+(defmethod ws:resource-received-frame ((res swank-proxy-resource) client message)
+  (when (find client (resource-clients res))
+    (let* ((string-for-emacs (format nil "[~s] ~s~%" (position client (resource-clients res)) message))
+           (r (yason:parse message))
+           (result (gethash "RESULT" r))
+           (id (gethash "ID" r))
+           (err (gethash "ERROR" r)))
+      #++(format t "got frame ~s (~s)~%" data s)
+      #++(format t "got response ~s . ~s / ~s~%" result id err)
+      (if id
+          (let ((cont (gethash id *continuations*)))
+            (if cont
+                (if err
+                    (funcall cont nil err)
+                    (funcall cont t result))
+                #++(format t "got cont id ~s but no cont?~%" id))
+            (remhash id *continuations*))
+          (swank::send-to-emacs `(:write-string ,string-for-emacs))))))
 
 (defun proxy-send-to-client (client string &optional continuation)
-  (let ((cid nil))
-    (when continuation
-      (setf cid (incf *continuations-next-id*)
-            (gethash cid *continuations*) continuation))
-      (sb-concurrency:send-message
-       (slot-value (car (gethash "/swank" ws::*resources*)) 'ws::read-queue)
-       (list *send-marker*
-             (list client
-                   (with-output-to-string (*standard-output*)
-                     (yason:encode
-                      (alexandria:plist-hash-table
-                       (list "FORM" string
-                             "ID" cid))))
-                   continuation))))
-  )
+  ""
+  (let* ((cid (when continuation
+                (let ((cid (incf *continuations-next-id*)))
+                  (setf (gethash cid *continuations*) continuation)
+                  cid)))
+         (message (with-output-to-string (s)
+                   (yason:encode (alexandria:plist-hash-table
+                                  (list "FORM" string
+                                        "ID" cid))
+                                 s))))
+    ;; used to call handle-send-from-proxy from the resource loop, but
+    ;; I see no need to do this asynchronously right now
+    (handle-send-from-proxy (ws:find-global-resource "/swank")
+                            client
+                            message
+                            continuation)))
+
+(defun handle-send-from-proxy (resource client data cont)
+  (declare (ignore client))
+  (if (resource-clients resource)
+      (ws:write-to-clients (resource-clients resource) data)
+      (when cont
+        (funcall cont nil t))))
 
 #++
 (ws::run-server 12345)
@@ -95,17 +88,17 @@
 
 (defun start-proxy-server ()
   (let ((con swank::*emacs-connection*))
-    (sb-thread:make-thread
-    (lambda ()
-      (let ((swank::*emacs-connection* con))
-       (ws::run-server 12345)))
-    :name "socket server")
+    (bordeaux-threads:make-thread
+     (lambda ()
+       (let ((swank::*emacs-connection* con))
+         (ws::run-server 12344)))
+     :name "swank-proxy socket server")
 
-    (sb-thread:make-thread
+    (bordeaux-threads:make-thread
      (lambda ()
        (let ((swank::*emacs-connection* con))
          (run-swank-proxy-server)))
-     :name "resource handler")))
+     :name "swank-proxy resource handler")))
 
 #++
 (defun swank (&key (dont-close nil))
