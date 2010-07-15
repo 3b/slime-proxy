@@ -86,29 +86,42 @@
 #++
 (run-swank-proxy-server)
 
-(defun start-proxy-server ()
-  (let ((con swank::*emacs-connection*))
-    (bordeaux-threads:make-thread
-     (lambda ()
-       (let ((swank::*emacs-connection* con))
-         (ws::run-server 12344)))
-     :name "swank-proxy socket server")
+(defvar *swank-proxy-ws-thread* nil
+  "Thread executing the websockets event-loop.")
 
-    (bordeaux-threads:make-thread
-     (lambda ()
-       (let ((swank::*emacs-connection* con))
-         (run-swank-proxy-server)))
-     :name "swank-proxy resource handler")))
+(defvar *swank-proxy-resource-thread* nil
+  "Thread executing the websockets resource event-loop.")
+
+(defun start-proxy-server (&key kill-existing)
+  (macrolet ((maybe-kill (special)
+               `(progn
+                  (when (and ,special (not (bordeaux-threads:thread-alive-p ,special)))
+                    (setf ,special nil))
+                  (when (and kill-existing ,special)
+                    (bordeaux-threads:destroy-thread ,special)
+                    (setf ,special nil))))
+             (maybe-setf (special value)
+               `(unless ,special
+                  (setf ,special ,value))))
+
+    (maybe-kill *swank-proxy-ws-thread* )
+    (maybe-kill *swank-proxy-resource-thread*)
+
+  (let ((con swank::*emacs-connection*))
+    (maybe-setf *swank-proxy-ws-thread*
+                (bordeaux-threads:make-thread
+                 (lambda ()
+                   (let ((swank::*emacs-connection* con))
+                     (ws::run-server 12344)))
+                 :name "swank-proxy websockets server"))
+
+    (maybe-setf *swank-proxy-resource-thread*
+                (bordeaux-threads:make-thread
+                 (lambda ()
+                   (let ((swank::*emacs-connection* con))
+                     (run-swank-proxy-server)))
+                 :name "swank-proxy resource handler")))))
 
 #++
 (defun swank (&key (dont-close nil))
   (swank:create-server :coding-system "utf-8" :dont-close dont-close))
-
-
-
-
-
-
-
-
-
