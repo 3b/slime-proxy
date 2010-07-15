@@ -65,21 +65,25 @@ invoke our debugger.
 
 Analagous to EVAL-FOR-EMACS, but instead of using EVAL to evaluate
 form, uses PROXY-EVAL-FORM"
+  (declare (optimize (debug 3)))
   (let* ((b (guess-buffer-package buffer-package))
+         (brt (guess-buffer-readtable buffer-package))
          (*buffer-package* b)
-         (*buffer-readtable* (guess-buffer-readtable buffer-package))
+         (*buffer-readtable* brt)
          (*pending-continuations* (cons id *pending-continuations*)))
     (check-type *buffer-package* package)
     (check-type *buffer-readtable* readtable)
     (flet ((cont (ok result)
-             (when ok
-               (let ((*buffer-readtable* b))
-                 (run-hook *pre-reply-hook*)))
-             (send-to-emacs `(:return ,(current-thread)
-                                     ,(if ok
-                                          `(:ok ,result)
-                                          `(:abort))
-                                     ,id))))
+             ;; fixme: make sure that we are binding the proper specials
+               (when ok
+                 (let ((*buffer-package* b)
+                       (*buffer-readtable* brt))
+                   (run-hook *pre-reply-hook*)
+                   (send-to-emacs `(:return ,(current-thread)
+                                            ,(if ok
+                                                 `(:ok ,result)
+                                                 `(:abort))
+                                            ,id))))))
      (let (ok result)
        (unwind-protect
             (let ((*buffer-package* (guess-buffer-package buffer-package))
@@ -99,7 +103,7 @@ form, uses PROXY-EVAL-FORM"
 ;;; with a particular command and its arguments
 (define-channel-method :proxy (c args)
   (setf *proxy-cmd* (list c args))
-  ;(format t "proxy ~s~%" (list c args))
+  (format t "proxy ~s~%" (list c args))
   (case (car args)
     (:emacs-rex
      (destructuring-bind (form package thread id &rest r) (cdr args)
@@ -112,7 +116,23 @@ form, uses PROXY-EVAL-FORM"
 
 ;; SPAWN-PROXY-THREAD and CREATE-PROXY-LISTENER set up the swank-proxy
 ;; thread that listens in on SWANK events and  
+(defslimefun create-proxy-listener (remote)
+  (let* ((pkg *package*)
+         (conn *emacs-connection*)
+         (ch (make-instance 'listener-channel
+                            :remote remote
+                            :env (initial-listener-bindings remote))))
+
+    (with-slots (thread id) ch
+      (when (use-threads-p)
+        (setf thread (spawn-proxy-thread ch conn)))
+      (list id
+            (thread-id thread)
+            (package-name pkg)
+            (package-string-for-prompt pkg)))))
+
 (defun create-proxy-listener ()
+  "Analogous to SWANK:CREATE-LISTENER"
   (let ((ch (make-instance 'proxy-channel)))
     (with-slots (thread id) ch
       (when (use-threads-p)

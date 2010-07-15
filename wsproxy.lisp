@@ -1,8 +1,12 @@
 (defpackage #:swank-proxy-ws
     (:use :cl :anaphora)
-    (:export #:main))
+    (:export #:main
+             #:start-proxy-server))
 
 (in-package #:swank-proxy-ws)
+
+(defvar *swank-proxy-port* 12344
+  "Port used for swank-proxy websockets server.")
 
 (defun splog (format-str &rest format-args)
   "Logging function used by swank proxy."
@@ -92,7 +96,7 @@
 (defvar *swank-proxy-resource-thread* nil
   "Thread executing the websockets resource event-loop.")
 
-(defun start-proxy-server (&key kill-existing)
+(defun start-proxy-server (&key kill-existing (port *swank-proxy-port*))
   (macrolet ((maybe-kill (special)
                `(progn
                   (when (and ,special (not (bordeaux-threads:thread-alive-p ,special)))
@@ -112,7 +116,7 @@
                 (bordeaux-threads:make-thread
                  (lambda ()
                    (let ((swank::*emacs-connection* con))
-                     (ws::run-server 12344)))
+                     (ws:run-server port)))
                  :name "swank-proxy websockets server"))
 
     (maybe-setf *swank-proxy-resource-thread*

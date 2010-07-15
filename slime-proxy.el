@@ -33,9 +33,40 @@
 ;(slime-def-connection-var slime-proxy-connection nil
 ;  "connection used as a proxy by this connection.")
 
+(defgroup slime-proxy nil
+  "Interaction with the Superior Lisp Environment."
+  :prefix "slime-proxy-"
+  :group 'slime)
+
 (defvar slime-proxy-event-loop nil)
+(defvar slime-proxy-most-recent-channel-id 1)
 (make-variable-buffer-local
  (defvar slime-proxy-proxy-connection nil))
+
+(defun slime-proxy-open-listener ()
+  "Create a new listener window."
+  (interactive)
+  (let ((channel (slime-make-channel nil "slime-proxy-channel")))
+    (slime-eval-async
+     `(swank:create-proxy-listener ,(slime-channel.id channel))
+     (slime-rcurry 
+      (lambda (result channel)
+	(destructuring-bind (remote thread-id package prompt) result
+          (setq slime-proxy-most-recent-channel-id remote)
+	  (pop-to-buffer (generate-new-buffer (slime-buffer-name :proxy-scratch)))
+          (slime-repl-mode)
+          (setq slime-proxy-proxy-connection t)
+	  ;(setq slime-current-thread thread-id)
+	  (setq slime-buffer-connection (slime-connection))
+	  (set (make-local-variable 'slime-proxy-remote-channel) remote)
+	  (slime-channel-put channel 'buffer (current-buffer))
+	  (slime-reset-repl-markers)
+	  ;(slime-channel-send channel `(:prompt ,package ,prompt))
+          (setf slime-buffer-package package)
+          (letf (((slime-lisp-package-prompt-string) (or prompt "PAREN>")))
+            (slime-repl-insert-prompt))
+	  (slime-repl-show-maximum-output)))
+      channel))))
 
 (defun slime-proxy-event-hook-function (event)
   (if (and slime-proxy-proxy-connection
@@ -52,9 +83,11 @@
            (when (and (slime-use-sigint-for-interrupt) (slime-busy-p))
              (slime-display-oneliner "; pipelined request... %S" form))
            (let ((id (incf (slime-continuation-counter))))
-             ;(message "proxied message, id=%s" id)
-             ;(message "proxied message, form=%s" form)
-             (slime-send `(:emacs-channel-send 1 (:proxy (:emacs-rex ,form ,package ,thread ,id))) )
+             (message "proxied message, id=%s" id)
+             (message "proxied message, form=%s" form)
+             (slime-send `(:emacs-channel-send
+                           ,slime-proxy-most-recent-channel-id
+                           (:proxy (:emacs-rex ,form ,package ,thread ,id))) )
              (push (cons id continuation) (slime-rex-continuations))
              (slime-recompute-modelines)))
           ((:buffer-first-change)
