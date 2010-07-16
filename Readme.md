@@ -7,31 +7,53 @@ Currently only usable with parenscript, using websockets for
 communication between host lisp and browser.
 
 #### Requirements:
-* currently only works on sbcl, since clws hasn't been ported to other lisps yet
-* [modified parenscript](http://github.com/3b/parenscript)
+* currently only works on sbcl, since clws hasn't been ported to other lisps yet,
+  though such a port would only take an hour or so
+* Modified parenscript.  Either [3b's fairly up-to-date branch](http://github.com/3b/parenscript) or
+  [gonzojive's older one](http://github.com/gonzojive/parenscript)
 * [clws](http://github.com/3b/clws)
-* [websockets emulation](http://github.com/gimite/web-socket-js) for browsers without native support
+* [websockets emulation](http://github.com/gimite/web-socket-js) for
+  browsers without native support, included as a git submodule
 * misc libraries: ironclad, anaphora, cl-ppcre, yason
 
-#### Loading:
+#### Installation of slime-proxy (and slime-parenscript)
 
-load slime-proxy/slime-proxy.el into emacs, then `M-x eval-buffer`
+slime-proxy comes with slime-parenscript, which a means of interacting
+with browser-side Javascript through Common Lisp and SLIME.  Here we
+describe how to install both:
 
-load/start proxy stuff (listens on port 12345 by default, adjust in wsproxy.lisp if needed)
+Install symbolic links in the slime/contrib directory.  Go into your
+slime contrib directory and add symbolic links to the following files:
 
-    (require 'slime-proxy)
-    (swank-proxy-ws::start-proxy-server)
-    (swank::create-proxy-listener)
+    slime-proxy.el
+    swank-proxy.lisp
+    slime-parenscript.el
+    swank-parenscript.lisp
 
-adjust URLs in slime-proxy/slimy.html
+Next you need to make ASD files visibile to ASDF so that they may be
+loaded from Common Lisp.  These ASD files are
 
-`/wsjs/*` &rarr;  files from web-socket-js
+    slime-parenscript.asd
+    slime-proxy.asd
 
-`ws://127.0.0.1:12345/` &rarr; host/port to use to connect to websocket serrver, if changed
+In your .emacs file, there should be a line like
 
-(if clients are loading page from somewhere other than localhost, add the host to the `(ws:origin-prefix "http..." ...)` form in wsproxy,lisp)
+    (slime-setup '(slime-repl slime-fancy slime-indentation slime-autodoc))
 
-load slimy.html in browser
+Add to that slime-proxy and slime-parenscript
+
+    (slime-setup '(slime-proxy slime-parenscript))
+
+Finally, open up slime and type `M-x slime-proxy`.  It will prompt you
+for "Target for proxy," to which you should type "ps".  Now you have
+got a REPL, and when you hit `C-c C-c` etc. inside of `.paren` files,
+they will be compiled from Parenscript to Javascript and sent to any
+connected browser.
+
+#### Connect to slime through a web browser
+
+Load the file `contrib/slimy/slimy.html` in a web browser on
+localhost.  Point your web browser there
 
 switch an emacs buffer to proxy mode:
 `M-: (setq slime-proxy-proxy-connection t) RET`
@@ -39,7 +61,13 @@ or
 
     ;;; -*- Mode: LISP; slime-proxy-proxy-connection: t -*-
 
+You may need to adjust URLs/ports in `contrib/slimy/slimy.html` and
+`wsproxy.lisp` (see `*swank-proxy-port*` in the latter), but probably
+not.  The default is 12344.
 
+(If clients are loading page from somewhere other than localhost, add
+the host to the `(ws:origin-prefix "http..." ...)` form in
+wsproxy,lisp)
 
 
 #### things that (mostly) work
@@ -55,3 +83,4 @@ or
 * autodoc
 * debugger
 * pretty much everything else :p
+
