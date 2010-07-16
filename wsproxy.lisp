@@ -53,7 +53,7 @@ to do with swank proxy."
                     (funcall cont t result))
                 #++(format t "got cont id ~s but no cont?~%" id))
             (remhash id *continuations*))
-          (swank::send-to-emacs `(:write-string ,string-for-emacs))))))
+          (swank::send-to-emacs `(:write-string ,string-for-emacs :proxy))))))
 
 (defun proxy-send-to-client (client string &optional continuation)
   (let* ((cid (when continuation

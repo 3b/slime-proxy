@@ -57,7 +57,7 @@
 (make-variable-buffer-local
  (defvar slime-proxy-proxy-connection nil))
 
-(defmacro with-proxy-output-buffers (&body body)
+(defmacro with-proxy-output-buffers (&rest body)
   `(letf (((slime-connection-output-buffer) (slime-connection-proxy-output-buffer)))
      ,@body))
 
@@ -94,7 +94,7 @@
 
              (setq slime-buffer-connection (slime-connection))
              (setf slime-buffer-package package)
-             ; (setf (slime-connection-output-buffer) (current-buffer))
+
              (setf (slime-connection-proxy-output-buffer) (current-buffer))
 
              (set (make-local-variable 'slime-proxy-remote-channel) remote)
