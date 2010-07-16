@@ -34,6 +34,7 @@ to do with swank proxy."
   (equal "/swank" resource-name))
 
 (defmethod ws:resource-client-disconnected ((resource swank-proxy-resource) client)
+  (format t "Client disconnected from resource ~A: ~A~%" resource client)
   (setf (resource-clients resource) (remove client (resource-clients resource))))
 
 (defmethod ws:resource-received-frame ((res swank-proxy-resource) client message)
@@ -55,29 +56,33 @@ to do with swank proxy."
             (remhash id *continuations*))
           (swank::send-to-emacs `(:write-string ,string-for-emacs :proxy))))))
 
-(defun proxy-send-to-client (client string &optional continuation)
+(defun proxy-send-to-client (client form &optional continuation)
+  "Send a form (string) to the client.  If client is nil, then send to
+all clients.  As soon as a message is back from the client,
+continuation is called with 2 arguments: (1) T if the evaluation went
+okay or not, and (2) the result."
+  (declare (type string form))
   (let* ((cid (when continuation
                 (let ((cid (incf *continuations-next-id*)))
                   (setf (gethash cid *continuations*) continuation)
                   cid)))
          (message (with-output-to-string (s)
                    (yason:encode (alexandria:plist-hash-table
-                                  (list "FORM" string
+                                  (list "FORM" form
                                         "ID" cid))
                                  s))))
-    ;; used to call handle-send-from-proxy from the resource loop, but
-    ;; I see no need to do this asynchronously right now
-    (handle-send-from-proxy (main-swank-proxy-resource)
-                            client
-                            message
-                            continuation)))
+    ;; used to do all this from the resource loop, but I see no need
+    ;; to do this asynchronously right now
+    (let ((resource (main-swank-proxy-resource)))
+      (if (resource-clients resource)
+          (ws:write-to-clients (if client
+                                   (list client)
+                                   (resource-clients resource))
+                               message)
+          ;; if there are no clients connected, call the continuation with not-ok
+          (when continuation
+            (funcall continuation nil t))))))
 
-(defun handle-send-from-proxy (resource client data cont)
-  (declare (ignore client))
-  (if (resource-clients resource)
-      (ws:write-to-clients (resource-clients resource) data)
-      (when cont
-        (funcall cont nil t))))
 
 (defvar *swank-proxy-ws-thread* nil
   "Thread executing the websockets event-loop.")

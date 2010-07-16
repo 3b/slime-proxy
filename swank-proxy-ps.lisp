@@ -1,9 +1,5 @@
 (in-package #:swank)
 
-;; fixme: this should be implemented in swank-proxy-ps, not here.
-;; Maybe achieve this by by generic function--the main problem now is
-;; achieving the propery dynamic bindings for specials needed by the
-;; parenscript proxy target
 (defvar *arglist-dispatch-hooks* nil)
 (defvar *operator-p-hooks* nil)
 (defun ps-operator-p (op )

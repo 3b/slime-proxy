@@ -63,19 +63,22 @@
 
 (defun slime-proxy-repl-write-string (string &optional target)
   (case target
-    (:proxy-repl-result
-     (with-proxy-output-buffers
-      (slime-repl-emit-result string)))
-    (:proxy
+    ((or :proxy-repl-result :proxy)
      (with-proxy-output-buffers
       (slime-proxy-repl-write-string string nil)))
-    (t                  (funcall 'slime-repl-write-string string target))))
+    (t
+     (funcall 'slime-repl-write-string string target))))
 
 (setq slime-write-string-function 'slime-proxy-repl-write-string)
 
+(defun slime-proxy (target)
+  "Open up a slime proxy instance through the remote swank, and
+launch a REPL for the proxy."
+  (interactive "sTarget for proxy: ")
+  (slime-proxy-open-listener target))
+
 (defun slime-proxy-open-listener (target)
   "Create a new listener window."
-  (interactive "sTarget for proxy: ")
   ;; create emacs-side channel struct
   (let ((channel (slime-make-channel nil "slime-proxy-channel")))
     ;; now create the swank-side proxy listener
@@ -142,11 +145,10 @@
           ((:buffer-first-change)
            nil)
           ((:operator-arglist )
+           (message "slime-proxy ignorning slime: %s" event)
            nil)
-;          ((:write-string output &optional target)
-;           (slime-write-string output target)
-;           t)
-          )
+          (t
+           (message "slime-proxy ignorning slime: %s" event)))
         t)
       nil))
 

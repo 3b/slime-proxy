@@ -84,14 +84,14 @@ form, uses PROXY-EVAL-FORM"
                     ,@body)))
       (flet ((cont (ok result)
                ;; fixme what about the not-okay case?
-               (when ok
-                 (with-dynamic-bindings-for-proxy-eval ()
-                   (run-hook *pre-reply-hook*)
-                   (send-to-emacs `(:return ,thread
-                                            ,(if ok
-                                                 `(:ok ,result)
-                                                 `(:abort))
-                                            ,id))))))
+               (with-dynamic-bindings-for-proxy-eval ()
+                 (run-hook *pre-reply-hook*)
+                 (format t "About to send to emacs: ~A~%" result)
+                 (send-to-emacs `(:return ,thread
+                                          ,(if ok
+                                               `(:ok ,result)
+                                               `(:abort))
+                                          ,id)))))
         (let (ok result)
           (unwind-protect
                (with-dynamic-bindings-for-proxy-eval ()
