@@ -73,7 +73,8 @@
        (lambda ()
          (let* ((eof (cons nil nil))
                 (f (read-from-string string nil eof))
-                (p (unless (eq f eof) (ps:ps* f))))
+                (p (unless (eq f eof) (ps:ps* f)))
+                (*send-repl-results-function* 'send-proxy-repl-results-to-emacs))
            (if (eq f eof)
                (progn
                  (funcall *send-repl-results-function* nil)
@@ -83,7 +84,7 @@
                   nil p
                   (lambda (o r)
                     (if o
-                        (progn
+                        (let ((*send-repl-results-function* 'send-proxy-repl-results-to-emacs))
                           (funcall *send-repl-results-function* (list r))
                           (funcall continuation t nil))
                         (funcall continuation o r))

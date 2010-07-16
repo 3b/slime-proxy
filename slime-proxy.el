@@ -38,7 +38,7 @@
   (:authors "3b"
             "Red Daly            <reddaly@gmail.com>")
   (:license "elisp code is GPL, Common Lisp Code is BSD?")
-  (:slime-dependencies );slime-proxy)
+  (:slime-dependencies slime-repl);slime-proxy)
   (:swank-dependencies swank-proxy)
   (:on-load
    ))
@@ -51,8 +51,27 @@
 (defvar slime-proxy-event-loop nil)
 (defvar slime-proxy-most-recent-channel-id nil)
 
+(slime-def-connection-var slime-connection-proxy-output-buffer nil
+  "The buffer for the REPL.  May be nil or a dead buffer.")
+
 (make-variable-buffer-local
  (defvar slime-proxy-proxy-connection nil))
+
+(defmacro with-proxy-output-buffers (&body body)
+  `(letf (((slime-connection-output-buffer) (slime-connection-proxy-output-buffer)))
+     ,@body))
+
+(defun slime-proxy-repl-write-string (string &optional target)
+  (case target
+    (:proxy-repl-result
+     (with-proxy-output-buffers
+      (slime-repl-emit-result string)))
+    (:proxy
+     (with-proxy-output-buffers
+      (slime-proxy-repl-write-string string nil)))
+    (t                  (funcall 'slime-repl-write-string string target))))
+
+(setq slime-write-string-function 'slime-proxy-repl-write-string)
 
 (defun slime-proxy-open-listener (target)
   "Create a new listener window."
@@ -61,31 +80,32 @@
   (let ((channel (slime-make-channel nil "slime-proxy-channel")))
     ;; now create the swank-side proxy listener
     (slime-eval-async
-     `(swank:create-proxy-listener ,(slime-channel.id channel) ,target)
-     (slime-rcurry 
-      (lambda (result channel)
-        (let ((slime-dispatching-connection (slime-connection)))
-          (destructuring-bind (remote thread-id package prompt) result
-            (setq slime-proxy-most-recent-channel-id remote)
-            (pop-to-buffer (generate-new-buffer (slime-buffer-name :proxy-repl)))
-            (slime-repl-mode)
-            (setq slime-proxy-proxy-connection t)
-            (setq slime-current-thread thread-id)
-            ;(message "New buffer with slime connection=%s" (slime-connection))
+        `(swank:create-proxy-listener ,(slime-channel.id channel) ,target)
+      (slime-rcurry 
+       (lambda (result channel)
+         (let ((slime-dispatching-connection (slime-connection)))
+           (destructuring-bind (remote thread-id package prompt) result
+             (setq slime-proxy-most-recent-channel-id remote)
+             (pop-to-buffer (generate-new-buffer (slime-buffer-name :proxy-repl)))
+             (slime-repl-mode)
+             (setq slime-proxy-proxy-connection t)
+             (setq slime-current-thread thread-id)
+                                        ;(message "New buffer with slime connection=%s" (slime-connection))
 
-            (setq slime-buffer-connection (slime-connection))
-            (setf slime-buffer-package package)
-            (setf (slime-connection-output-buffer) (current-buffer))
+             (setq slime-buffer-connection (slime-connection))
+             (setf slime-buffer-package package)
+             ; (setf (slime-connection-output-buffer) (current-buffer))
+             (setf (slime-connection-proxy-output-buffer) (current-buffer))
 
-            (set (make-local-variable 'slime-proxy-remote-channel) remote)
-            (slime-channel-put channel 'buffer (current-buffer))
-            (slime-reset-repl-markers)
-            ;(slime-channel-send channel `(:prompt ,package ,prompt))
+             (set (make-local-variable 'slime-proxy-remote-channel) remote)
+             (slime-channel-put channel 'buffer (current-buffer))
+             (slime-reset-repl-markers)
+                                        ;(slime-channel-send channel `(:prompt ,package ,prompt))
 
-            (letf (((slime-lisp-package-prompt-string) (or prompt "PAREN")))
-              (slime-repl-insert-prompt))
-            (slime-repl-show-maximum-output))))
-      channel))))
+             (letf (((slime-lisp-package-prompt-string) (or prompt "PAREN")))
+               (slime-repl-insert-prompt))
+             (slime-repl-show-maximum-output))))
+       channel))))
 
 
 (defun slime-proxy-event-hook-function (event)
@@ -108,7 +128,14 @@
              (slime-send `(:emacs-channel-send
                            ,slime-proxy-most-recent-channel-id
                            (:proxy (:emacs-rex ,form ,package ,thread ,id))) )
-             (push (cons id continuation) (slime-rex-continuations))
+             
+             ;; wrap the continuation to execute in the proxy's environment
+             (lexical-let* ((original continuation)
+                            (wrapped (lambda (result)
+                                       (with-proxy-output-buffers
+                                        (funcall original result)))))
+               (push (cons id wrapped)
+                     (slime-rex-continuations)))
              ;(message "adjusted continuations (added %i for %s): %s" 
              ;         id (slime-connection) (mapcar 'car (slime-rex-continuations)))
              (slime-recompute-modelines)))
@@ -116,9 +143,10 @@
            nil)
           ((:operator-arglist )
            nil)
-)
-
-       ; (slime-send event )
+;          ((:write-string output &optional target)
+;           (slime-write-string output target)
+;           t)
+          )
         t)
       nil))
 

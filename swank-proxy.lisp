@@ -142,25 +142,28 @@ fixme: this function has a very tentative interface"))
 
 (defslimefun create-proxy-listener (remote target)
   ;; fixme: move most of this into proxy-create-channel
-  (let* ((pkg *package*)
-         (conn *emacs-connection*)
-         (ch (proxy-create-channel (intern (string-upcase target) :keyword) :remote remote)))
+  (when (not (use-threads-p))
+    (error "SLIME-PROXY requires a multi-threaded lisp."))
 
-    (with-slots (thread id) ch
-      (if (use-threads-p)
-          (setf thread (start-swank-proxy-server ch conn :kill-existing nil))
-          (error "SLIME-PROXY requires a multi-threaded lisp."))
-      (list id
-            (thread-id thread)
-            (package-name pkg)
-            (package-string-for-prompt pkg)))))
+  (let* ((pkg *package*)
+         (conn *emacs-connection*))
+    (multiple-value-bind (thread channel)
+        (start-swank-proxy-server remote target conn :kill-existing nil)
+      (with-slots (id) channel
+        (list id
+              (thread-id thread)
+              (package-name pkg)
+              (package-string-for-prompt pkg))))))
 
 
 
 (defvar *swank-proxy-thread* nil
   "Thread executing the swank proxy event-loop.")
 
-(defun start-swank-proxy-server (channel emacs-connection &key kill-existing (port *swank-proxy-port*))
+(defvar *swank-proxy-channel* nil
+  "Channel used to communicate between slime and swank.")
+
+(defun start-swank-proxy-server (remote-channel target emacs-connection &key kill-existing (port *swank-proxy-port*))
   "Spawns all the necessary threads to connect emacs up to a proxy
 backend.  Returns the thread of the swank proxy server "
   (with-connection (emacs-connection)
@@ -179,12 +182,20 @@ backend.  Returns the thread of the swank proxy server "
 
       ;; first spawn the websockets threads
       (start-websockets-proxy-server :kill-existing kill-existing :port port)
-      (maybe-setf *swank-proxy-thread*
-                  (bordeaux-threads:make-thread
-                   (lambda ()
-                     (run-swank-proxy-loop channel emacs-connection))
-                   :name "swank-proxy-thread"))
-      *swank-proxy-thread*)))
+
+      ;; now we create a channel unless one already exists
+      (let ((channel (maybe-setf *swank-proxy-channel*
+                                 (proxy-create-channel (intern (string-upcase target) :keyword)
+                                                       :remote remote-channel))))
+        (maybe-setf *swank-proxy-thread*
+                    (bordeaux-threads:make-thread
+                     (lambda ()
+                       (unwind-protect 
+                            (run-swank-proxy-loop channel emacs-connection)
+                         (remove channel *swank-proxy-channels*)))
+                     :name "swank-proxy-thread"))
+        (setf (slot-value channel 'thread) *swank-proxy-thread*)
+        (values *swank-proxy-thread* channel)))))
 
 (defun run-swank-proxy-loop  (channel connection)
   "Runs the swak proxy event loop in the current thread indefinitely."
@@ -212,3 +223,12 @@ backend.  Returns the thread of the swank proxy server "
                        continuation &rest r)
   (destructuring-bind ((name)) r
     (buffer-first-change (eval name))))
+
+;;;; slime-proxy REPL
+(defun send-proxy-repl-results-to-emacs (values)
+  (finish-output)
+  (if (null values)
+      (send-to-emacs `(:write-string "; No value" :proxy-repl-result))
+      (dolist (v values)
+        (send-to-emacs `(:write-string ,(cat (prin1-to-string v) #\newline)
+                                       :proxy-repl-result)))))
