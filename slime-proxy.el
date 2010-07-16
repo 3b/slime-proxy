@@ -49,7 +49,7 @@
   :group 'slime)
 
 (defvar slime-proxy-event-loop nil)
-(defvar slime-proxy-most-recent-channel-id 1)
+(defvar slime-proxy-most-recent-channel-id nil)
 
 (make-variable-buffer-local
  (defvar slime-proxy-proxy-connection nil))
@@ -67,17 +67,21 @@
         (let ((slime-dispatching-connection (slime-connection)))
           (destructuring-bind (remote thread-id package prompt) result
             (setq slime-proxy-most-recent-channel-id remote)
-            (pop-to-buffer (generate-new-buffer (slime-buffer-name :proxy-scratch)))
+            (pop-to-buffer (generate-new-buffer (slime-buffer-name :proxy-repl)))
             (slime-repl-mode)
             (setq slime-proxy-proxy-connection t)
             (setq slime-current-thread thread-id)
             ;(message "New buffer with slime connection=%s" (slime-connection))
+
             (setq slime-buffer-connection (slime-connection))
+            (setf slime-buffer-package package)
+            (setf (slime-connection-output-buffer) (current-buffer))
+
             (set (make-local-variable 'slime-proxy-remote-channel) remote)
             (slime-channel-put channel 'buffer (current-buffer))
             (slime-reset-repl-markers)
-                                        ;(slime-channel-send channel `(:prompt ,package ,prompt))
-            (setf slime-buffer-package package)
+            ;(slime-channel-send channel `(:prompt ,package ,prompt))
+
             (letf (((slime-lisp-package-prompt-string) (or prompt "PAREN")))
               (slime-repl-insert-prompt))
             (slime-repl-show-maximum-output))))

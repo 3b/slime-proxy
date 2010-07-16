@@ -8,6 +8,7 @@
 (asdf:defsystem :slime-proxy
   :depends-on (:clws :parenscript :yason :anaphora :bordeaux-threads :alexandria)
   :serial t
-  :components ((:file "wsproxy")
+  :components ((:file "package")
+               (:file "wsproxy")
                (:file "swank-proxy")))
   

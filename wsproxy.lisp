@@ -1,9 +1,4 @@
-(defpackage #:swank-proxy-ws
-    (:use :cl :anaphora)
-    (:export #:main
-             #:start-proxy-server))
-
-(in-package #:swank-proxy-ws)
+(in-package :swank-proxy)
 
 (defvar *swank-proxy-port* 12344
   "Port used for swank-proxy websockets server.")
@@ -19,19 +14,19 @@
 
 (defclass swank-proxy-resource (ws:ws-resource)
   ((clients :initform () :accessor resource-clients)
+   #+nil
    (clients-lock :initform (bordeaux-threads:make-lock) :reader resource-clients-lock
                  :documentation "Required to access the clients list")))
 
-(ws:register-global-resource 
- "/swank"
- (make-instance 'swank-proxy-resource)
- (ws::origin-prefix "http://127.0.0.1" "http://localhost"))
-
-(defun run-swank-proxy-server ()
-  "Starts up a swank proxy server in the current thread."
-  (let ((res (ws:find-global-resource "/swank")))
-    (setf (resource-clients res) nil)
-    (ws:run-resource-listener res)))
+(defun main-swank-proxy-resource ()
+  "Returns the websockets resource we use for pretty much everything
+to do with swank proxy."
+  (or (ws:find-global-resource "/swank")
+      (let ((res (make-instance 'swank-proxy-resource)))
+        (ws:register-global-resource "/swank"
+                                     res
+                                     (ws::origin-prefix "http://127.0.0.1" "http://localhost"))
+        res)))
 
 (defmethod ws:resource-accept-connection ((res swank-proxy-resource) resource-name headers client)
   (splog "Swank add client ~s~%" client)
@@ -61,7 +56,6 @@
           (swank::send-to-emacs `(:write-string ,string-for-emacs))))))
 
 (defun proxy-send-to-client (client string &optional continuation)
-  ""
   (let* ((cid (when continuation
                 (let ((cid (incf *continuations-next-id*)))
                   (setf (gethash cid *continuations*) continuation)
@@ -73,7 +67,7 @@
                                  s))))
     ;; used to call handle-send-from-proxy from the resource loop, but
     ;; I see no need to do this asynchronously right now
-    (handle-send-from-proxy (ws:find-global-resource "/swank")
+    (handle-send-from-proxy (main-swank-proxy-resource)
                             client
                             message
                             continuation)))
@@ -85,18 +79,13 @@
       (when cont
         (funcall cont nil t))))
 
-#++
-(ws::run-server 12345)
-#++
-(run-swank-proxy-server)
-
 (defvar *swank-proxy-ws-thread* nil
   "Thread executing the websockets event-loop.")
 
 (defvar *swank-proxy-resource-thread* nil
   "Thread executing the websockets resource event-loop.")
 
-(defun start-proxy-server (&key kill-existing (port *swank-proxy-port*))
+(defun start-websockets-proxy-server (&key kill-existing (port *swank-proxy-port*))
   (macrolet ((maybe-kill (special)
                `(progn
                   (when (and ,special (not (bordeaux-threads:thread-alive-p ,special)))
@@ -123,9 +112,12 @@
                 (bordeaux-threads:make-thread
                  (lambda ()
                    (let ((swank::*emacs-connection* con))
-                     (run-swank-proxy-server)))
-                 :name "swank-proxy resource handler")))))
+                     (run-swank-proxy-resource-server)))
+                 :name "swank-proxy resource handler"))))
+  (list *swank-proxy-ws-thread* *swank-proxy-resource-thread*))
 
-#++
-(defun swank (&key (dont-close nil))
-  (swank:create-server :coding-system "utf-8" :dont-close dont-close))
+(defun run-swank-proxy-resource-server ()
+  "Starts up a swank proxy resource server in the current thread."
+  (let ((res (main-swank-proxy-resource)))
+    (setf (resource-clients res) nil)
+    (ws:run-resource-listener res)))

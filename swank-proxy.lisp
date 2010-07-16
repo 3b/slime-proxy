@@ -1,7 +1,16 @@
 (in-package #:swank)
 
-(defvar *proxy-cmd*
-  "Used for debugging purposes.")
+;;import symbols from swank-proxy that we use extensively
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (import '(swank-proxy:proxy-eval
+            swank-proxy:proxy-create-channel
+            swank-proxy:proxy-channel
+            swank-proxy:proxy-listener-channel
+            swank-proxy:channel-target
+            swank-proxy:start-swank-proxy-server
+            swank-proxy:*swank-proxy-port*
+            swank-proxy:start-websockets-proxy-server)
+          :swank))
 
 (defclass proxy-channel (channel)
   ((target :initarg :target :initform nil :accessor channel-target
@@ -12,19 +21,6 @@
 
 (defclass proxy-listener-channel (proxy-channel listener-channel)
   ())
-
-;; fixme: this should be implemented in swank-proxy-ps, not here.
-;; Maybe achieve this by by generic function--the main problem now is
-;; achieving the propery dynamic bindings for specials needed by the
-;; parenscript proxy target
-(defvar *arglist-dispatch-hooks* nil)
-(defvar *operator-p-hooks* nil)
-(defun ps-operator-p (op )
-  #++(let ((*package* (find-package :keyword)))
-       (format t "operator-p ~s = ~s~%" op  (ps::parenscript-function-p op)))
-  #+parenscript
-  (ps::parenscript-function-p op))
-
 
 (defgeneric proxy-eval (op proxy-target continuation &rest args)
   (:documentation "The beautiful generic function at the heart of
@@ -37,7 +33,8 @@ evaluated by PROXY-EVAL-FOR-EMACS."))
 (defmethod proxy-eval ((op t) (proxy-target t) cont &rest args)
   ;; by default, simply call the continuation and return :async
   (format t "unknown proxy-eval command ~s or proxy target ~s~%" (cons op args) proxy-target)
-  (funcall cont nil nil)
+  (when cont
+    (funcall cont nil nil))
   :async)
 
 (defmacro define-proxy-fun (name target (&rest args) &body body)
@@ -52,16 +49,12 @@ proxy-eval. "
       (destructuring-bind (,args) ,rest
         ,@body))))
 
-(defun proxy-eval-form (form target continuation)
-  ""
-  ;; fixme: this should be implemented in swank-proxy-ps, not here.
-  (let ((*arglist-dispatch-hooks* (cons 'ps-arglist-dispatch
-                                        *arglist-dispatch-hooks*))
-        (*operator-p-hooks* (cons 'ps-operator-p
-                                  *operator-p-hooks*)))
-    (funcall 'proxy-eval (car form) target continuation
-             (mapcar 'eval (cdr form)))))
+(defgeneric proxy-eval-form (form target continuation)
+  (:documentation ""))
 
+(defmethod  proxy-eval-form (form target continuation)
+  (funcall 'proxy-eval (car form) target continuation
+           (mapcar 'eval (cdr form))))
 
 (defun proxy-eval-for-emacs (form channel thread buffer-package id)
   "Binds *BUFFER-PACKAGE* to BUFFER-PACKAGE and proxy-evaluates FORM.
@@ -74,44 +67,41 @@ form, uses PROXY-EVAL-FORM"
   (let* ((b (guess-buffer-package buffer-package))
          (brt (guess-buffer-readtable buffer-package))
          (pc (cons id *pending-continuations*))
-         (conn *emacs-connection*)
-         (*buffer-package* b)
-         (*buffer-readtable* brt)
-         (*pending-continuations* pc))
-    (check-type *buffer-package* package)
-    (check-type *buffer-readtable* readtable)
-    #+nil
-    (format t "proxy-eval-for-emacs connection: ~A / ~A~%" conn *emacs-connection*)
-    (flet ((cont (ok result)
-             ;; fixme: make sure that we are binding the proper specials
-             ;; fixme what about the not-okay case?
+         (conn *emacs-connection*))
+    ;; fixme: make sure that we are binding the proper
+    ;; specials. these specials were determined by guess-and-check
+    (macrolet ((with-dynamic-bindings-for-proxy-eval (ignored &body body)
+                 (declare (ignore ignored))
+                 `(let ((*buffer-package* b)
+                        (*buffer-readtable* brt)
+                        (*pending-continuations* pc)
+                        (*emacs-connection* conn))
+                    (check-type *buffer-package* package)
+                    (check-type *buffer-readtable* readtable)
+                    ,@body)))
+      (flet ((cont (ok result)
+               ;; fixme what about the not-okay case?
                (when ok
-                 (let ((*buffer-package* b)
-                       (*buffer-readtable* brt)
-                       (*pending-continuations* pc)
-                       (*emacs-connection* conn))
-                   #+nil(format t "proxy-eval... connection (continuation): ~A / ~A~%" conn *emacs-connection*)
+                 (with-dynamic-bindings-for-proxy-eval ()
                    (run-hook *pre-reply-hook*)
                    (send-to-emacs `(:return ,thread
                                             ,(if ok
                                                  `(:ok ,result)
                                                  `(:abort))
                                             ,id))))))
-     (let (ok result)
-       (unwind-protect
-            (let ((*buffer-package* (guess-buffer-package buffer-package))
-                  (*buffer-readtable* (guess-buffer-readtable buffer-package))
-                  (*pending-continuations* (cons id *pending-continuations*)))
-              (check-type *buffer-package* package)
-              (check-type *buffer-readtable* readtable)
-              ;; APPLY would be cleaner than EVAL. 
-              ;; (setq result (apply (car form) (cdr form)))
-              (setq result (with-slime-interrupts (proxy-eval-form form (channel-target channel)
-                                                                   #'cont)))
-              #++(run-hook *pre-reply-hook*)
-              (setq ok t))
-         (when (not (eq result :async))
-           (cont ok result)))))))
+        (let (ok result)
+          (unwind-protect
+               (with-dynamic-bindings-for-proxy-eval ()
+                 ;; APPLY would be cleaner than EVAL. 
+                 ;; (setq result (apply (car form) (cdr form)))
+                 (setq result (with-slime-interrupts (proxy-eval-form form (channel-target channel)
+                                                                      #'cont)))
+                 (setq ok t))
+            (when (not (eq result :async))
+              (cont ok result))))))))
+
+(defvar *proxy-cmd*
+  "Used for debugging purposes.")
 
 ;;; All slime-proxy events are sent through the :proxy method, bundled
 ;;; with a particular command and its arguments
@@ -149,33 +139,57 @@ fixme: this function has a very tentative interface"))
          (ch (proxy-create-channel (intern (string-upcase target) :keyword) :remote remote)))
 
     (with-slots (thread id) ch
-      (when (use-threads-p)
-        (setf thread (spawn-proxy-thread ch conn)))
+      (if (use-threads-p)
+          (setf thread (start-swank-proxy-server ch conn :kill-existing nil))
+          (error "SLIME-PROXY requires a multi-threaded lisp."))
       (list id
             (thread-id thread)
             (package-name pkg)
             (package-string-for-prompt pkg)))))
 
-(defun spawn-proxy-thread (channel connection)
-  (spawn (lambda ()
-           (tagbody
-            start
-              (with-top-level-restart (connection (go start))
-                (with-connection (connection)
-                  (loop
-                     (destructure-case (wait-for-event `(:emacs-channel-send . _))
-                       ((:emacs-channel-send c (selector &rest args))
-                        (assert (eq c channel))
-                        (channel-send channel selector args))))))))
-         :name "swank-proxy-thread"))
 
-#++
-(progn
-  (setf *channels* '())
-  (setf *channel-counter* 0)
-  (create-proxy-listener))
-#++
-(create-proxy-listener)
+
+(defvar *swank-proxy-thread* nil
+  "Thread executing the swank proxy event-loop.")
+
+(defun start-swank-proxy-server (channel emacs-connection &key kill-existing (port *swank-proxy-port*))
+  "Spawns all the necessary threads to connect emacs up to a proxy
+backend.  Returns the thread of the swank proxy server "
+  (with-connection (emacs-connection)
+    (macrolet ((maybe-kill (special)
+                 `(progn
+                    (when (and ,special (not (bordeaux-threads:thread-alive-p ,special)))
+                      (setf ,special nil))
+                    (when (and kill-existing ,special)
+                      (bordeaux-threads:destroy-thread ,special)
+                      (setf ,special nil))))
+               (maybe-setf (special value)
+                 `(unless ,special
+                    (setf ,special ,value))))
+
+      (maybe-kill *swank-proxy-thread*)
+
+      ;; first spawn the websockets threads
+      (start-websockets-proxy-server :kill-existing kill-existing :port port)
+      (maybe-setf *swank-proxy-thread*
+                  (bordeaux-threads:make-thread
+                   (lambda ()
+                     (run-swank-proxy-loop channel emacs-connection))
+                   :name "swank-proxy-thread"))
+      *swank-proxy-thread*)))
+
+(defun run-swank-proxy-loop  (channel connection)
+  "Runs the swak proxy event loop in the current thread indefinitely."
+  (tagbody
+   start
+     (with-top-level-restart (connection (go start))
+       (with-connection (connection)
+         (loop
+           (destructure-case (wait-for-event `(:emacs-channel-send . _))
+             ((:emacs-channel-send c (selector &rest args))
+              (assert (eq c channel))
+              (channel-send channel selector args))))))))
+
 
 ;;; eval-and-grab-output
 ;;; interactive-eval

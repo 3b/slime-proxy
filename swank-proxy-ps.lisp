@@ -1,8 +1,24 @@
 (in-package #:swank)
 
+;; fixme: this should be implemented in swank-proxy-ps, not here.
+;; Maybe achieve this by by generic function--the main problem now is
+;; achieving the propery dynamic bindings for specials needed by the
+;; parenscript proxy target
+(defvar *arglist-dispatch-hooks* nil)
+(defvar *operator-p-hooks* nil)
+(defun ps-operator-p (op )
+  (ps::parenscript-function-p op))
+
+(defmethod proxy-eval-form (form (target (eql :ps)) continuation)
+  (let ((*arglist-dispatch-hooks* (cons 'ps-arglist-dispatch
+                                        *arglist-dispatch-hooks*))
+        (*operator-p-hooks* (cons 'ps-operator-p
+                                  *operator-p-hooks*)))
+    (call-next-method)))
+
 (define-proxy-fun swank:interactive-eval :ps (string)
   (let ((p (ps:ps* (read-from-string string))))
-    (swank-proxy-ws::proxy-send-to-client nil p continuation)
+    (swank-proxy::proxy-send-to-client nil p continuation)
     :async))
 
 (define-proxy-fun swank::operator-arglist :ps (name package)
@@ -17,7 +33,7 @@
                  (t (princ-to-string (cons name args))))))
         ;; then ask a browser
         (t
-         (swank-proxy-ws::proxy-send-to-client
+         (swank-proxy::proxy-send-to-client
           nil
           (ps:ps (let (rr)
                    (ps:try (setf rr
@@ -63,7 +79,7 @@
                  (funcall *send-repl-results-function* nil)
                  nil)
                (progn
-                 (swank-proxy-ws::proxy-send-to-client
+                 (swank-proxy::proxy-send-to-client
                   nil p
                   (lambda (o r)
                     (if o
@@ -81,7 +97,7 @@
          (ps::*ps-source-position* position )
          (ps::*ps-source-buffer* buffer)
          (p (ps:ps* (read-from-string  string))))
-    (swank-proxy-ws::proxy-send-to-client nil p)
+    (swank-proxy::proxy-send-to-client nil p)
     (make-compilation-result nil t (float
                                     (/ (- (get-internal-real-time) start)
                                        internal-time-units-per-second)))))
@@ -92,7 +108,7 @@
     (format t "warning: compilation without loading not handled properly yet in swank-proxy/compile-file-for-emacs..."))
   (let ((start (get-internal-real-time))
         (compiled (ps:ps-compile-file filename)))
-    (swank-proxy-ws::proxy-send-to-client
+    (swank-proxy::proxy-send-to-client
      nil
      compiled)
     (make-compilation-result nil t (float
