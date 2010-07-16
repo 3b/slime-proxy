@@ -33,9 +33,12 @@ evaluated by PROXY-EVAL-FOR-EMACS."))
 (defmethod proxy-eval ((op t) (proxy-target t) cont &rest args)
   ;; by default, simply call the continuation and return :async
   (format t "unknown proxy-eval command ~s or proxy target ~s~%" (cons op args) proxy-target)
+  #+nil
   (when cont
     (funcall cont nil nil))
-  :async)
+  #+nil
+  :async
+  :pass)
 
 (defmacro define-proxy-fun (name target (&rest args) &body body)
   "Defines a method for proxy-eval with NAME and TARGET as eql
@@ -94,9 +97,14 @@ form, uses PROXY-EVAL-FORM"
                (with-dynamic-bindings-for-proxy-eval ()
                  ;; APPLY would be cleaner than EVAL. 
                  ;; (setq result (apply (car form) (cdr form)))
-                 (setq result (with-slime-interrupts (proxy-eval-form form (channel-target channel)
-                                                                      #'cont)))
-                 (setq ok t))
+                 (setq result
+                       (with-slime-interrupts (proxy-eval-form form (channel-target channel)
+                                                               #'cont)))
+                 (setq ok t)
+                 (when (eql result :pass)
+                   (setf result
+                         (eval-for-emacs  form *buffer-package* id))))
+                   
             (when (not (eq result :async))
               (cont ok result))))))))
 
@@ -110,12 +118,12 @@ form, uses PROXY-EVAL-FORM"
   #+nil(format t "proxy ~s~%" (list channel args))
   (case (car args)
     (:emacs-rex
-     (destructuring-bind (form package thread id &rest r) (cdr args)
-       (declare (ignore r))
-       ;(format t "form ~s~% package ~s~% id ~S~%" form package id)
-       (proxy-eval-for-emacs form channel thread package id)
-       #++(let ((swank-backend::*proxy-interfaces* (make-hash-table)))
-         (eval-for-emacs form package id))))))
+       (destructuring-bind (form package thread id &rest r) (cdr args)
+         (declare (ignore r))
+         ;;(format t "form ~s~% package ~s~% id ~S~%" form package id)
+         (proxy-eval-for-emacs form channel thread package id)
+         #++(let ((swank-backend::*proxy-interfaces* (make-hash-table)))
+              (eval-for-emacs form package id))))))
 
 
 ;; SPAWN-PROXY-THREAD and CREATE-PROXY-LISTENER set up the swank-proxy
