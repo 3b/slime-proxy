@@ -1,5 +1,8 @@
 (in-package #:swank)
 
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (swank-require :swank-arglists))
+
 (defvar *arglist-dispatch-hooks* nil)
 (defvar *operator-p-hooks* nil)
 (defun ps-operator-p (op )

@@ -13,7 +13,9 @@
           :swank))
 
 (defclass proxy-channel (channel)
-  ((target :initarg :target :initform nil :accessor channel-target
+  ;; THREAD slot is a kludge
+  ((thread :initarg :thread :initform (current-thread) :accessor channel-thread)
+   (target :initarg :target :initform nil :accessor channel-target
            :documentation "The target for messages delivered through this
            proxy channel. "))
   (:documentation "Subclass of the main slime channel class used for
@@ -166,6 +168,7 @@ fixme: this function has a very tentative interface"))
 (defun start-swank-proxy-server (remote-channel target emacs-connection &key kill-existing (port *swank-proxy-port*))
   "Spawns all the necessary threads to connect emacs up to a proxy
 backend.  Returns the thread of the swank proxy server "
+  (declare (optimize (debug 3)))
   (with-connection (emacs-connection)
     (macrolet ((maybe-kill (special)
                  `(progn
@@ -175,8 +178,9 @@ backend.  Returns the thread of the swank proxy server "
                       (bordeaux-threads:destroy-thread ,special)
                       (setf ,special nil))))
                (maybe-setf (special value)
-                 `(unless ,special
-                    (setf ,special ,value))))
+                 `(if ,special
+                      ,special
+                      (setf ,special ,value))))
 
       (maybe-kill *swank-proxy-thread*)
 
@@ -192,9 +196,10 @@ backend.  Returns the thread of the swank proxy server "
                      (lambda ()
                        (unwind-protect 
                             (run-swank-proxy-loop channel emacs-connection)
-                         (remove channel *swank-proxy-channels*)))
+                         (when (eql *swank-proxy-channel* channel)
+                           (setf *swank-proxy-channel* nil))))
                      :name "swank-proxy-thread"))
-        (setf (slot-value channel 'thread) *swank-proxy-thread*)
+        (setf (channel-thread channel) *swank-proxy-thread*)
         (values *swank-proxy-thread* channel)))))
 
 (defun run-swank-proxy-loop  (channel connection)

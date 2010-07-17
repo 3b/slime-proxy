@@ -25,6 +25,8 @@ to do with swank proxy."
       (let ((res (make-instance 'swank-proxy-resource)))
         (ws:register-global-resource "/swank"
                                      res
+                                     #'ws::any-origin 
+                                     #+nil
                                      (ws::origin-prefix "http://127.0.0.1" "http://localhost"))
         res)))
 

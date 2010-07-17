@@ -110,9 +110,16 @@ launch a REPL for the proxy."
              (slime-repl-show-maximum-output))))
        channel))))
 
+(defun slime-proxy-connected-p ()
+  "Returns T if we are connected to a proxy server."
+  (and (slime-connected-p)
+       (slime-connection)
+       (slime-connection-proxy-output-buffer)
+       t))
 
 (defun slime-proxy-event-hook-function (event)
   (if (and slime-proxy-proxy-connection
+           (slime-proxy-connected-p)
            (not slime-proxy-event-loop))
       (let ((slime-proxy-event-loop t)
             (proxy slime-proxy-proxy-connection)
