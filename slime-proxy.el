@@ -161,7 +161,8 @@ launch a REPL for the proxy."
            (lexical-let* ((original continuation)
                           (wrapped (lambda (result)
                                      (with-proxy-output-buffers
-                                      (funcall original result)))))
+                                      (let ((slime-proxy-wrapped-continuation t))
+                                        (funcall original result))))))
              (push (cons id wrapped)
                    (slime-rex-continuations)))
                                         ;(message "adjusted continuations (added %i for %s): %s" 
@@ -210,7 +211,18 @@ launch a REPL for the proxy."
       (t nil)))
    (t nil)))
 
+(defun slime-proxy-initialize-macroexpansion-buffer-hook-function (buffer)
+  "Put the macroexpansion buffer into proxy mode."
+  (with-current-buffer buffer
+    (message "macroexpansion hook %s and continuation? %s"
+             buffer
+             slime-proxy-wrapped-continuation)
+    (setq slime-proxy-proxy-connection
+          (and slime-proxy-wrapped-continuation t))))
+
 (add-hook 'slime-event-hooks 'slime-proxy-event-hook-function)
+(add-hook 'slime-initialize-macroexpansion-buffer-hook
+          'slime-proxy-initialize-macroexpansion-buffer-hook-function)
 
 ;;; todo: on slime-net-process-close-hooks, check for proxy connection closing
 

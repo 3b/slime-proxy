@@ -33,8 +33,8 @@
       (funcall ps:*ps-read-function* stream))))
 
 (defvar swank-proxy::*proxy-read-function* nil)
-#+parenscript-reader
-(defparameter swank-proxy::*proxy-read-function* #'parenscript.reader::read)
+;;#+parenscript-reader
+;;(defparameter swank-proxy::*proxy-read-function* #'parenscript.reader::read)
 
 (defun apply-ps-macro-expander (expander string)
   (with-retry-restart (:msg "Retry (proxied) SLIME Macroexpansion request.")
@@ -134,6 +134,17 @@
                           (funcall continuation o r)))
                     ))
                  :async))))))))
+
+(define-proxy-fun swank:find-definitions-for-emacs :ps (name)
+  (declare (optimize (debug 3)))
+  (let ((result
+         (ignore-errors
+           (with-buffer-syntax ()
+             (let* ((name-form (ps-read-from-string name))
+                    (source-loc (gethash name-form ps::*ps-function-location-toplevel-cache*)))
+               source-loc)))))
+    (format t "Would return ~S~%" result)
+    result))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;; SWANK-C-P-C
@@ -236,10 +247,5 @@ to the context provided by RAW-FORM."
     :async)
   )
 
-
-(define-proxy-fun swank:find-definitions-for-emacs :ps (name)
-  (ignore-errors 
-    (let ((n (ps-read-from-string name)))
-      (gethash n ps::*ps-function-location-toplevel-cache*))))
 
 
