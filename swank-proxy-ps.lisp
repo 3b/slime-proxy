@@ -1,7 +1,8 @@
 (in-package #:swank)
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
-  (swank-require :swank-arglists))
+  (swank-require :swank-arglists)
+  (swank-require :swank-c-p-c))
 
 (defvar *arglist-dispatch-hooks* nil)
 (defvar *operator-p-hooks* nil)
@@ -15,11 +16,55 @@
                                   *operator-p-hooks*)))
     (call-next-method)))
 
-(define-proxy-fun swank:interactive-eval :ps (string)
-  (let ((p (ps:ps* (read-from-string string))))
-    (swank-proxy::proxy-send-to-client nil p continuation)
-    :async))
+;;; Mostly ordered by how difficult these were to implement
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;; General
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(define-proxy-fun swank:simple-completions :ps (prefix package)
+  (swank:simple-completions prefix package))
+
+;;; macro expansion
+(defun ps-read-from-string (string)
+  (with-input-from-string (stream string)
+    (let ((ps:*ps-read-function* (or swank-proxy::*proxy-read-function*
+                                     ps:*ps-read-function*
+                                     #'read)))
+      (funcall ps:*ps-read-function* stream))))
+
+(defvar swank-proxy::*proxy-read-function* nil)
+#+parenscript-reader
+(defparameter swank-proxy::*proxy-read-function* #'parenscript.reader::read)
+
+(defun apply-ps-macro-expander (expander string)
+  (with-retry-restart (:msg "Retry (proxied) SLIME Macroexpansion request.")
+    (with-buffer-syntax ()
+      (with-bindings *macroexpand-printer-bindings*
+        (prin1-to-string (funcall expander (ps-read-from-string string)))))))
+
+(define-proxy-fun swank-macroexpand-1 :ps (string)
+  (apply-ps-macro-expander #'ps::ps-macroexpand-1 string))
+
+(define-proxy-fun swank-macroexpand :ps (string)
+  (apply-ps-macro-expander #'ps::ps-macroexpand string))
+
+(define-proxy-fun swank-macroexpand-all :ps (string)
+  ;; fixme: true macroexpand all
+  (apply-ps-macro-expander #'ps::ps-macroexpand string))
+
+(define-proxy-fun swank-compiler-macroexpand-1 :ps (string)
+  ;; fixme: true macroexpand all
+  (apply-ps-macro-expander #'ps::ps-macroexpand-1 string))
+
+(define-proxy-fun swank-compiler-macroexpand :ps (string)
+  ;; fixme: true macroexpand all
+  (apply-ps-macro-expander #'ps::ps-macroexpand string))
+
+(define-proxy-fun swank-format-string-expand :ps (string)
+  ;; fixme: true macroexpand all
+  (apply-ps-macro-expander #'format-string-expand string))
+
+;; overridden by autodoc
 (define-proxy-fun swank::operator-arglist :ps (name package)
   ;; fixme: probably should factor some of this out to common code?
   (ignore-errors
@@ -63,12 +108,11 @@
                 (funcall continuation t result)))))
          :async)))))
 
-
 (define-proxy-fun swank:listener-eval :ps (string)
   (clear-user-input)
   (with-buffer-syntax ()
-    (with-retry-restart (:msg "Retry (proxied) SLIME REPL evaluation rexuest.")
-      (track-package
+    (with-retry-restart (:msg "Retry (proxied) SLIME REPL evaluation request.")
+      (proxy-track-package
        (lambda ()
          (let* ((eof (cons nil nil))
                 (f (read-from-string string nil eof))
@@ -82,25 +126,52 @@
                  (swank-proxy::proxy-send-to-client
                   nil p
                   (lambda (o r)
-                    (if o
-                        (let ((*send-repl-results-function* 'send-proxy-repl-results-to-emacs))
-                          (funcall *send-repl-results-function* (list r))
-                          (funcall continuation t nil))
-                        (funcall continuation o r))
+                    (let ((*send-repl-results-function* 'send-proxy-repl-results-to-emacs))
+                      (if o
+                          (progn
+                            (funcall *send-repl-results-function* (list r))
+                            (funcall continuation t nil))
+                          (funcall continuation o r)))
                     ))
                  :async))))))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;; SWANK-C-P-C
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(define-proxy-fun swank::completions-for-character :ps (prefix)
+  (swank::completions-for-character prefix))
+
+;; fixme kludge
+(defparameter *ps-repl-package* nil
+  "Used to track the package we are in in the proxy
+  environment/buffer.  Prevents the proxy buffer's *package* and the
+  CL repl's *package* from interacting strangely. ")
+
+(defun proxy-track-package (fun)
+  "Calls FN and lets it change *package*, transmitting the result to
+emacs with :proxy-new-package."
+  (let ((p *package*))
+    (unwind-protect (funcall fun)
+      (unless (eq *package* p)
+        (send-to-emacs (list :proxy-event
+                             :new-package (package-name *package*)
+                             (package-string-for-prompt *package*)))))))
 
 (define-proxy-fun swank:compile-string-for-emacs :ps (string buffer position filename policy)
   (declare (ignorable buffer position filename policy))
   (let* ((start (get-internal-real-time))
+         ;; protect package changes in ps repl from affecting cl repl
+         ;(*package* *buffer-package*)
          (ps::*ps-source-file* filename)
          (ps::*ps-source-position* position )
-         (ps::*ps-source-buffer* buffer)
-         (p (ps:ps* (read-from-string  string))))
-    (swank-proxy::proxy-send-to-client nil p)
-    (make-compilation-result nil t (float
-                                    (/ (- (get-internal-real-time) start)
-                                       internal-time-units-per-second)))))
+         (ps::*ps-source-buffer* buffer))
+    (with-buffer-syntax ()
+      (let ((p (ps:ps* (read-from-string  string))))
+        (swank-proxy::proxy-send-to-client nil p)
+        (make-compilation-result nil t (float
+                                        (/ (- (get-internal-real-time) start)
+                                           internal-time-units-per-second)))))))
+      
 
 (define-proxy-fun swank:compile-file-for-emacs :ps (filename load-p &rest r)
     (declare (ignore r))
@@ -113,12 +184,62 @@
      compiled)
     (make-compilation-result nil t (float
                                     (/ (- (get-internal-real-time) start)
-                                       internal-time-units-per-second))))
+                                       internal-time-units-per-second)))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;; Swank arglists (autodoc)
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(defmacro with-ps-autodoc-env (&body body)
+  `(let ((swank::*external-valid-function-name-p-hooks*
+          (cons 'ps::parenscript-function-p
+                swank::*external-valid-function-name-p-hooks*))
+         (swank::*external-arglist-hooks*
+          (cons 'ps::parenscript-arglist
+                swank::*external-arglist-hooks*)))
+     ,@body))
+
+(define-proxy-fun swank::autodoc :ps (raw-form &rest args &key print-right-margin)
+  "Return a string representing the arglist for the deepest subform in
+RAW-FORM that does have an arglist. The highlighted parameter is
+wrapped in ===> X <===."
+  (with-ps-autodoc-env
+    (apply 'swank::autodoc raw-form args)))
+
+(define-proxy-fun :ps swank::complete-form (raw-form)
+  "Read FORM-STRING in the current buffer package, then complete it
+  by adding a template for the missing arguments."
+  (with-ps-autodoc-env
+    (swank::complete-form raw-form)))
+
+(define-proxy-fun swank::completions-for-keyword :ps (keyword-string raw-form)
+  "Return a list of possible completions for KEYWORD-STRING relative
+to the context provided by RAW-FORM."
+  (with-ps-autodoc-env
+    (swank::completions-for-keyword keyword-string raw-form)))
+
+(define-proxy-fun swank::completions :ps (string default-package-name)
+  (with-ps-autodoc-env
+    (swank::completions string default-package-name)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;; Not classified
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(define-proxy-fun swank:interactive-eval :ps (string)
+  #+nil
+  (with-buffer-syntax ()
+    (with-retry-restart (:msg "Retry SLIME interactive evaluation request.")
+      (let ((p (ps:ps* (read-from-string string))))
+        (swank-proxy::proxy-send-to-client nil p continuation)
+        :async)))
+  (let ((p (ps:ps* (read-from-string string))))
+    (swank-proxy::proxy-send-to-client nil p continuation)
+    :async)
   )
 
-(define-proxy-fun swank:find-definitions-for-emacs :ps (name)
- (let ((n (from-string name)))
-   (gethash n ps::*ps-function-location-toplevel-cache*)))
 
-(define-proxy-fun swank:autodoc :ps (raw-form &key print-right-margin)
-  (swank:autodoc raw-form :print-right-margin print-right-margin ))
+(define-proxy-fun swank:find-definitions-for-emacs :ps (name)
+  (ignore-errors 
+    (let ((n (ps-read-from-string name)))
+      (gethash n ps::*ps-function-location-toplevel-cache*))))
+
+

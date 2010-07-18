@@ -9,7 +9,8 @@
             swank-proxy:channel-target
             swank-proxy:start-swank-proxy-server
             swank-proxy:*swank-proxy-port*
-            swank-proxy:start-websockets-proxy-server)
+            swank-proxy:start-websockets-proxy-server
+            swank-proxy:proxy-send-to-client)
           :swank))
 
 (defclass proxy-channel (channel)
@@ -35,12 +36,12 @@ evaluated by PROXY-EVAL-FOR-EMACS."))
 (defmethod proxy-eval ((op t) (proxy-target t) cont &rest args)
   ;; by default, simply call the continuation and return :async
   (format t "unknown proxy-eval command ~s or proxy target ~s~%" (cons op args) proxy-target)
-  #+nil
   (when cont
     (funcall cont nil nil))
-  #+nil
   :async
-  :pass)
+  #+nil
+  :pass
+  nil)
 
 (defmacro define-proxy-fun (name target (&rest args) &body body)
   "Defines a method for proxy-eval with NAME and TARGET as eql
@@ -88,7 +89,7 @@ form, uses PROXY-EVAL-FORM"
                ;; fixme what about the not-okay case?
                (with-dynamic-bindings-for-proxy-eval ()
                  (run-hook *pre-reply-hook*)
-                 (format t "About to send to emacs: ~A~%" result)
+                 ;(format t "About to send to emacs: ~A~%" result)
                  (send-to-emacs `(:return ,thread
                                           ,(if ok
                                                `(:ok ,result)

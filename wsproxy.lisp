@@ -58,32 +58,57 @@ to do with swank proxy."
             (remhash id *continuations*))
           (swank::send-to-emacs `(:write-string ,string-for-emacs :proxy))))))
 
+;; fixme: make this actually be thread-safe.  To do so we should
+;; probably improve how message-passing works in clws and use some
+;; exported functionality from there to pass messages to the resource
+;; thread.
+(defun proxy-send-to-clients (form &key continuation clients (resource (main-swank-proxy-resource)))
+  "Version of proxy-send-to-client that may be called from any thread.
+
+FORM is a string or some other JSON-encodable form that is send to the
+client.
+
+CLIENTS is either a specific list of clients or NIL, in which case it
+stands for all the clients of the given resource.
+
+CONTINUATION will be executed on the resource thread upon receipt of a
+response from the client, and passed 2 arguments: (1) T if the
+evaluation went okay or not, and (2) the result.
+
+RESOURCE is the swank resource"
+  (declare (type string form))
+  (ws:call-on-resource-thread
+   resource
+   (lambda ()
+     (setf clients (or clients (resource-clients resource)))
+     (let* ((cid (when continuation
+                   ;; fixme: probably need to clear out the continuations hash every
+                   ;; once in a while?
+                   (let ((cid (incf *continuations-next-id*)))
+                     (setf (gethash cid *continuations*) continuation)
+                     cid)))
+            (message (with-output-to-string (s)
+                       (yason:encode (alexandria:plist-hash-table
+                                      (list "FORM" form
+                                            "ID" cid))
+                                     s))))
+       (if (resource-clients resource)
+           (ws:write-to-clients clients message)
+           ;; if there are no clients connected, call the continuation with not-ok
+           (when continuation
+             (funcall continuation nil t)))))))
+
+;; This should only execute on the thread listening for
+;; proxy-channel events. send-form-to-client is the thread-safe version
 (defun proxy-send-to-client (client form &optional continuation)
   "Send a form (string) to the client.  If client is nil, then send to
 all clients.  As soon as a message is back from the client,
 continuation is called with 2 arguments: (1) T if the evaluation went
 okay or not, and (2) the result."
   (declare (type string form))
-  (let* ((cid (when continuation
-                (let ((cid (incf *continuations-next-id*)))
-                  (setf (gethash cid *continuations*) continuation)
-                  cid)))
-         (message (with-output-to-string (s)
-                   (yason:encode (alexandria:plist-hash-table
-                                  (list "FORM" form
-                                        "ID" cid))
-                                 s))))
-    ;; used to do all this from the resource loop, but I see no need
-    ;; to do this asynchronously right now
-    (let ((resource (main-swank-proxy-resource)))
-      (if (resource-clients resource)
-          (ws:write-to-clients (if client
-                                   (list client)
-                                   (resource-clients resource))
-                               message)
-          ;; if there are no clients connected, call the continuation with not-ok
-          (when continuation
-            (funcall continuation nil t))))))
+  (proxy-send-to-clients form
+                         :continuation continuation
+                         :clients (when client (list client))))
 
 
 (defvar *swank-proxy-ws-thread* nil

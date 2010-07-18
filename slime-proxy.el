@@ -57,8 +57,25 @@
 (make-variable-buffer-local
  (defvar slime-proxy-proxy-connection nil))
 
+(defun slime-proxy-output-buffer ()
+  "Returns the proxy REPL buffer based on the current buffer."
+  ;; FIXME: use a per-buffer variable instead of a per-connection variable
+  (let* ((slime-dispatching-connection (slime-proxy-connection)))
+    (slime-connection-proxy-output-buffer)))
+           
+
+(defun slime-proxy-connection ()
+  "Returns the most relevant proxy connection."
+  (flet ((test-process (process)
+            (let ((slime-dispatching-connection process))
+              (slime-with-connection-buffer (process)
+                (when (slime-connection-proxy-output-buffer)
+                  t)))))
+    (find-if #'test-process (cons (slime-current-connection)
+                                  slime-net-processes))))
+
 (defmacro with-proxy-output-buffers (&rest body)
-  `(letf (((slime-connection-output-buffer) (slime-connection-proxy-output-buffer)))
+  `(letf (((slime-connection-output-buffer) (slime-proxy-output-buffer)))
      ,@body))
 
 (defun slime-proxy-repl-write-string (string &optional target)
@@ -112,52 +129,86 @@ launch a REPL for the proxy."
 
 (defun slime-proxy-connected-p ()
   "Returns T if we are connected to a proxy server."
-  (and (slime-connected-p)
-       (slime-connection)
-       (slime-connection-proxy-output-buffer)
-       t))
+  (let ((slime-dispatching-connection (slime-proxy-connection)))
+    (and (slime-connected-p)
+         (slime-connection-proxy-output-buffer)
+         t)))
 
 (defun slime-proxy-event-hook-function (event)
-  (if (and slime-proxy-proxy-connection
-           (slime-proxy-connected-p)
-           (not slime-proxy-event-loop))
-      (let ((slime-proxy-event-loop t)
-            (proxy slime-proxy-proxy-connection)
-            (slime-proxy-proxy-connection nil)
-            (slime-dispatching-connection (slime-connection)))
-       ; (message "sending proxied msg %s - %s" proxy event)
-        (destructure-case event
-          ((:emacs-interrupt thread)
-           (slime-send `(:emacs-interrupt ,thread)))
-          ((:emacs-rex form package thread continuation)
-           (when (and (slime-use-sigint-for-interrupt) (slime-busy-p))
-             (slime-display-oneliner "; pipelined request... %S" form))
-           (let ((id (incf (slime-continuation-counter))))
-             ;(message "proxied message, id=%s" id)
-             ;(message "proxied message, form=%s" form)
-             (slime-send `(:emacs-channel-send
-                           ,slime-proxy-most-recent-channel-id
-                           (:proxy (:emacs-rex ,form ,package ,thread ,id))) )
+  (cond
+   ((and slime-proxy-proxy-connection
+         (slime-proxy-connected-p)
+         (not slime-proxy-event-loop))
+    (let ((slime-proxy-event-loop t)
+          (proxy slime-proxy-proxy-connection)
+          (slime-proxy-proxy-connection nil)
+          (slime-dispatching-connection (slime-proxy-connection)))
+                                        ; (message "sending proxied msg %s - %s" proxy event)
+      (destructure-case event
+        ((:emacs-interrupt thread)
+         (slime-send `(:emacs-interrupt ,thread)))
+        ((:emacs-rex form package thread continuation)
+         (when (and (slime-use-sigint-for-interrupt) (slime-busy-p))
+           (slime-display-oneliner "; pipelined request... %S" form))
+         (let ((id (incf (slime-continuation-counter))))
+                                        ;(message "proxied message, id=%s" id)
+                                        ;(message "proxied message, form=%s" form)
+           (slime-send `(:emacs-channel-send
+                         ,slime-proxy-most-recent-channel-id
+                         (:proxy (:emacs-rex ,form ,package ,thread ,id))) )
              
-             ;; wrap the continuation to execute in the proxy's environment
-             (lexical-let* ((original continuation)
-                            (wrapped (lambda (result)
-                                       (with-proxy-output-buffers
-                                        (funcall original result)))))
-               (push (cons id wrapped)
-                     (slime-rex-continuations)))
-             ;(message "adjusted continuations (added %i for %s): %s" 
-             ;         id (slime-connection) (mapcar 'car (slime-rex-continuations)))
-             (slime-recompute-modelines)))
-          ((:buffer-first-change)
-           nil)
-          ((:operator-arglist )
-           (message "slime-proxy ignorning slime: %s" event)
-           nil)
-          (t
-           (message "slime-proxy ignorning slime: %s" event)))
-        t)
-      nil))
+           ;; wrap the continuation to execute in the proxy's environment
+           (lexical-let* ((original continuation)
+                          (wrapped (lambda (result)
+                                     (with-proxy-output-buffers
+                                      (funcall original result)))))
+             (push (cons id wrapped)
+                   (slime-rex-continuations)))
+                                        ;(message "adjusted continuations (added %i for %s): %s" 
+                                        ;         id (slime-connection) (mapcar 'car (slime-rex-continuations)))
+           (slime-recompute-modelines)))
+        ((:buffer-first-change)
+         nil)
+        ((:operator-arglist )
+         (message "slime-proxy ignorning slime: %s" event)
+         nil)
+        ;;; fixme dont have proxy-event caught in two places.  Use
+        ;;; only the one below, and get rid of the if/else separating
+        ;;; these.
+        ((:proxy-event wrapped-event package prompt-string)
+         (case wrapped-event
+           (:new-package
+            (setf (slime-lisp-package) package)
+            (setf (slime-lisp-package-prompt-string) prompt-string)
+            (let ((buffer (slime-connection-output-buffer)))
+              (when (buffer-live-p buffer)
+                (with-current-buffer buffer
+                  (setq slime-buffer-package package)))))
+           (t (message "slime-proxy ignoring proxy event: %s" wrapped-event)))
+         t)
+
+        (t
+         (message "slime-proxy ignorning slime: %s" event)))
+      t))
+   ((and (slime-proxy-connected-p)
+         (not slime-proxy-event-loop))
+    (destructure-case event
+      ((:proxy-event wrapped-event package prompt-string)
+       (case wrapped-event
+         (:new-package
+          ;; fixme: need a proxy version of slime-lisp-package, which
+          ;; requires making slime-lisp-package buffer-specific, not
+          ;; connection-specific
+          (setf (slime-lisp-package) package)
+          (setf (slime-lisp-package-prompt-string) prompt-string)
+          (lexical-let ((buffer (slime-connection-proxy-output-buffer)))
+            (when (buffer-live-p buffer)
+              (with-current-buffer buffer
+                (setq slime-buffer-package package)))))
+         (t (message "slime-proxy ignoring proxy event: %s" wrapped-event)))
+       t)
+      (t nil)))
+   (t nil)))
 
 (add-hook 'slime-event-hooks 'slime-proxy-event-hook-function)
 

@@ -3,7 +3,7 @@
   (:authors "3b"
             "Red Daly            <reddaly@gmail.com>")
   (:license "elisp code is GPL, Common Lisp Code is BSD?")
-  (:slime-dependencies slime-proxy slime-autodoc)
+  (:slime-dependencies slime-proxy slime-autodoc slime-c-p-c)
   (:swank-dependencies swank-parenscript)
   (:on-load
    ))
