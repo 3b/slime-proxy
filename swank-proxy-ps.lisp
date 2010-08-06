@@ -164,7 +164,8 @@ emacs with :proxy-new-package."
   (let ((p *package*))
     (unwind-protect (funcall fun)
       (unless (eq *package* p)
-        (send-to-emacs (list :proxy-event
+        ;; :proxy-event needs patched slime, so disabled for now
+        (send-to-emacs (list #++ :proxy-event
                              :new-package (package-name *package*)
                              (package-string-for-prompt *package*)))))))
 
