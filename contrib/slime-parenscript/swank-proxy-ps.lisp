@@ -24,6 +24,10 @@
 (define-proxy-fun swank:simple-completions :ps (prefix package)
   (swank:simple-completions prefix package))
 
+(defvar swank-proxy::*proxy-read-function* nil)
+;;#+parenscript-reader
+;;(defparameter swank-proxy::*proxy-read-function* #'parenscript.reader::read)
+
 ;;; macro expansion
 (defun ps-read-from-string (string)
   (with-input-from-string (stream string)
@@ -31,10 +35,6 @@
                                      ps:*ps-read-function*
                                      #'read)))
       (funcall ps:*ps-read-function* stream))))
-
-(defvar swank-proxy::*proxy-read-function* nil)
-;;#+parenscript-reader
-;;(defparameter swank-proxy::*proxy-read-function* #'parenscript.reader::read)
 
 (defun apply-ps-macro-expander (expander string)
   (with-retry-restart (:msg "Retry (proxied) SLIME Macroexpansion request.")
