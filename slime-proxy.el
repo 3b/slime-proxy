@@ -130,7 +130,8 @@ launch a REPL for the proxy."
 (defun slime-proxy-connected-p ()
   "Returns T if we are connected to a proxy server."
   (let ((slime-dispatching-connection (slime-proxy-connection)))
-    (and (slime-connected-p)
+    (and slime-dispatching-connection
+         (slime-connected-p)
          (slime-connection-proxy-output-buffer)
          t)))
 

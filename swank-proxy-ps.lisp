@@ -116,7 +116,7 @@
        (lambda ()
          (let* ((eof (cons nil nil))
                 (f (read-from-string string nil eof))
-                (p (unless (eq f eof) (ps:ps* f)))
+                (p (unless (eq f eof) (ps::ps** f :expressionp t)))
                 (*send-repl-results-function* 'send-proxy-repl-results-to-emacs))
            (if (eq f eof)
                (progn

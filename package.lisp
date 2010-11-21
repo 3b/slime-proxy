@@ -10,3 +10,4 @@
            #:start-swank-proxy-server
            #:*swank-proxy-port*))
 
+(provide :swank-proxy)
