@@ -110,7 +110,6 @@
 
 (define-proxy-fun swank:listener-eval :ps (string)
   (declare (optimize (debug 3)))
-  (break)
   (clear-user-input)
   (with-buffer-syntax ()
     (with-retry-restart (:msg "Retry (proxied) SLIME REPL evaluation request.")

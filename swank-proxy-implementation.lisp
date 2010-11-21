@@ -93,7 +93,9 @@ form, uses PROXY-EVAL-FORM"
                  (send-to-emacs `(:return ,thread
                                           ,(if ok
                                                `(:ok ,result)
-                                               `(:abort ,result))
+                                               `(:abort ,(if (stringp result)
+                                                             result
+                                                             "proxy: non-string error")))
                                           ,id)))))
         (let (ok result)
           (unwind-protect
