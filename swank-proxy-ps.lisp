@@ -164,7 +164,8 @@ emacs with :proxy-new-package."
   (let ((p *package*))
     (unwind-protect (funcall fun)
       (unless (eq *package* p)
-        (send-to-emacs (list :proxy-event
+        ;; :proxy-event needs patched slime, so disabled for now
+        (send-to-emacs (list #++ :proxy-event
                              :new-package (package-name *package*)
                              (package-string-for-prompt *package*)))))))
 
@@ -242,8 +243,19 @@ to the context provided by RAW-FORM."
       (let ((p (ps:ps* (read-from-string string))))
         (swank-proxy::proxy-send-to-client nil p continuation)
         :async)))
-  (let ((p (ps:ps* (read-from-string string))))
-    (swank-proxy::proxy-send-to-client nil p continuation)
+  (let ((p (ps:ps* (let ((*package* *buffer-package*))
+                     (read-from-string string))))
+        ;; store some specials that format-values-for-echo-area expects
+        ;; to be bound, so we can restore them in the continuation
+        (buffer-package *buffer-package*)
+        (buffer-readtable *buffer-readtable*))
+    (swank-proxy::proxy-send-to-client
+     nil p
+     (lambda (ok result)
+       (funcall continuation
+                ok (let ((*buffer-package* buffer-package)
+                         (*buffer-readtable* buffer-readtable))
+                     (format-values-for-echo-area (list result))))))
     :async)
   )
 

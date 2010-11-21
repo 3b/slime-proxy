@@ -245,3 +245,5 @@ launch a REPL for the proxy."
       (backward-up-list 1)
       (down-list 1)
       (slime-sexp-at-point))))
+
+(provide 'slime-proxy)

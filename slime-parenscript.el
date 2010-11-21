@@ -24,3 +24,5 @@ auto-parenscript-proxify-list."
     (parenscript-proxify)))
 
 (add-hook 'lisp-mode-hook 'parenscript-proxify-maybe)
+
+(provide 'slime-parenscript)
