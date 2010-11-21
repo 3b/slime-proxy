@@ -93,7 +93,7 @@ form, uses PROXY-EVAL-FORM"
                  (send-to-emacs `(:return ,thread
                                           ,(if ok
                                                `(:ok ,result)
-                                               `(:abort))
+                                               `(:abort ,result))
                                           ,id)))))
         (let (ok result)
           (unwind-protect
