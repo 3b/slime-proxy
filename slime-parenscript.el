@@ -23,6 +23,21 @@ auto-parenscript-proxify-list."
                  auto-parenscript-proxify-list)
     (parenscript-proxify)))
 
+(defun slime-parenscript-operator-before-point ()
+  (ignore-errors
+    (save-excursion
+      (backward-up-list 1)
+      (down-list 1)
+      (slime-sexp-at-point))))
+
+(defun slime-parenscript-show-arglist ()
+  (let ((op (slime-parenscript-operator-before-point)))
+    (when op
+      (slime-eval-async `(swank:operator-arglist ,op ,(slime-current-package))
+			(lambda (arglist)
+			  (if arglist
+			    (slime-message "%s" arglist)))))))
+
 (add-hook 'lisp-mode-hook 'parenscript-proxify-maybe)
 
 (provide 'slime-parenscript)

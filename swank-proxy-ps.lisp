@@ -83,14 +83,16 @@
                    (ps:try (setf rr
                                  ((ps:@ *function introspect)
                                   (ps:lisp
-                                   (read-from-string name))))
+                                   (let ((*package* (guess-buffer-package package)))
+                                     (read-from-string name)))))
                            (:catch (e)
                              (setf rr (ps:create arg-names "not available"))))
                    rr))
           ;; if that fails, fall back to looking up in host lisp
           ;; fixme: possibly better to try host first?
-          (lambda (response error)
-            (let (result)
+          (lambda (ok response)
+            (let (result
+                  (error (not ok)))
               (unwind-protect
                    (progn
                      (cond
