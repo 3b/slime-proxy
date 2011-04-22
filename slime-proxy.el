@@ -1,44 +1,9 @@
-
-
-;;(defun slime-proxy-connect (&optional connection)
-;;  "Connect to a swank proxied behind an existing connection."
-;;  (let ((old-connection (slime-current-connection)))
-;;    (message "Connecting to Swank proxy through ~s.." old-connection))
-;;  (with-current-buffer (get-buffer-create "*inferior-lisp-proxy*")
-;;    (let* ((inhibit-quit nil)
-;;           (proc (get-buffer-process (current-buffer)))
-;;           )
-;;      ;;(lisp-mode-variables t)
-;;      (slime-set-query-on-exit-flag proc)
-;;      (run-hooks 'slime-inferior-process-start-hook)
-;;      proc
-;;
-;;      (set-process-buffer proc buffer)
-;;      (set-process-filter proc 'slime-net-filter)
-;;      (set-process-sentinel proc 'slime-net-sentinel)
-;;      (slime-set-query-on-exit-flag proc)
-;;      (when (fboundp 'set-process-coding-system)
-;;        (slime-check-coding-system coding-system)
-;;        (set-process-coding-system proc coding-system coding-system))
-;;      (when-let (secret (slime-secret))
-;;        (slime-net-send secret proc))
-;;      proc))
-;;  (let ((coding-system (or coding-system slime-net-coding-system)))
-;;    (slime-check-coding-system coding-system)
-;;    (message "Connecting to Swank on port %S.." port)
-;;    (let* ((process (slime-net-connect host port coding-system))
-;;           (slime-dispatching-connection process))
-;;      (slime-setup-connection process))))
-;;
-;(slime-def-connection-var slime-proxy-connection nil
-;  "connection used as a proxy by this connection.")
-
 (define-slime-contrib slime-proxy
   "Interaction with other environments through SLIME and swank."
   (:authors "3b"
             "Red Daly            <reddaly@gmail.com>")
   (:license "elisp code is GPL, Common Lisp Code is BSD?")
-  (:slime-dependencies slime-repl);slime-proxy)
+  (:slime-dependencies slime-repl)
   (:swank-dependencies swank-proxy)
   (:on-load
    ))

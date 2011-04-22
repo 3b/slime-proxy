@@ -24,6 +24,10 @@
 (define-proxy-fun swank:simple-completions :ps (prefix package)
   (swank:simple-completions prefix package))
 
+(defvar swank-proxy::*proxy-read-function* nil)
+;;#+parenscript-reader
+;;(defparameter swank-proxy::*proxy-read-function* #'parenscript.reader::read)
+
 ;;; macro expansion
 (defun ps-read-from-string (string)
   (with-input-from-string (stream string)
@@ -31,10 +35,6 @@
                                      ps:*ps-read-function*
                                      #'read)))
       (funcall ps:*ps-read-function* stream))))
-
-(defvar swank-proxy::*proxy-read-function* nil)
-;;#+parenscript-reader
-;;(defparameter swank-proxy::*proxy-read-function* #'parenscript.reader::read)
 
 (defun apply-ps-macro-expander (expander string)
   (with-retry-restart (:msg "Retry (proxied) SLIME Macroexpansion request.")
@@ -111,6 +111,7 @@
          :async)))))
 
 (define-proxy-fun swank:listener-eval :ps (string)
+  (declare (optimize (debug 3)))
   (clear-user-input)
   (with-buffer-syntax ()
     (with-retry-restart (:msg "Retry (proxied) SLIME REPL evaluation request.")
@@ -118,24 +119,28 @@
        (lambda ()
          (let* ((eof (cons nil nil))
                 (f (read-from-string string nil eof))
-                (p (unless (eq f eof) (ps:ps* f)))
+                (p (unless (eq f eof) (ps::ps** f :expressionp t)))
                 (*send-repl-results-function* 'send-proxy-repl-results-to-emacs))
-           (if (eq f eof)
-               (progn
-                 (funcall *send-repl-results-function* nil)
-                 nil)
-               (progn
-                 (swank-proxy::proxy-send-to-client
-                  nil p
-                  (lambda (o r)
-                    (let ((*send-repl-results-function* 'send-proxy-repl-results-to-emacs))
-                      (if o
-                          (progn
-                            (funcall *send-repl-results-function* (list r))
-                            (funcall continuation t nil))
-                          (funcall continuation o r)))
-                    ))
-                 :async))))))))
+           (cond
+             ((eq f eof)
+              (funcall *send-repl-results-function* nil)
+              nil)
+             (t
+              (swank-proxy::proxy-send-to-client
+               nil p
+               (lambda (eval-ok? result)
+                 ;(break)
+                 (let ((*send-repl-results-function* 'send-proxy-repl-results-to-emacs))
+                   (cond
+                     (eval-ok?
+                      (funcall *send-repl-results-function* (list result))
+                      (funcall continuation t nil))
+
+                     (t
+                      (funcall *send-repl-results-function* nil)
+                      (funcall continuation eval-ok? result))))))
+
+              :async))))))))
 
 (define-proxy-fun swank:find-definitions-for-emacs :ps (name)
   (declare (optimize (debug 3)))

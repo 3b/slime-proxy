@@ -96,7 +96,7 @@ RESOURCE is the swank resource"
            (ws:write-to-clients clients message)
            ;; if there are no clients connected, call the continuation with not-ok
            (when continuation
-             (funcall continuation nil t)))))))
+             (funcall continuation nil "Not connected to any proxy clients.")))))))
 
 ;; This should only execute on the thread listening for
 ;; proxy-channel events. send-form-to-client is the thread-safe version

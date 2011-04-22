@@ -1,11 +1,11 @@
 (cl:in-package :cl-user)
 
-(defpackage :slime-parenscript-system
+(defpackage :swank-parenscript-system
   (:use #:cl #:asdf))
 
-(in-package :slime-parenscript-system)
+(in-package :swank-parenscript-system)
 
-(asdf:defsystem :slime-parenscript
+(asdf:defsystem :swank-parenscript
   :depends-on (:parenscript :slime-proxy)
   :serial t
   :components ((:file "swank-proxy-ps")))

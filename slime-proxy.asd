@@ -10,5 +10,5 @@
   :serial t
   :components ((:file "package")
                (:file "wsproxy")
-               (:file "swank-proxy")))
+               (:file "swank-proxy-implementation")))
   
