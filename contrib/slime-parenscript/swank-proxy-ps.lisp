@@ -119,7 +119,7 @@
        (lambda ()
          (let* ((eof (cons nil nil))
                 (f (read-from-string string nil eof))
-                (p (unless (eq f eof) (ps::ps** f :expressionp t)))
+                (p (unless (eq f eof) (ps::ps* f)))
                 (*send-repl-results-function* 'send-proxy-repl-results-to-emacs))
            (cond
              ((eq f eof)
@@ -209,13 +209,14 @@ emacs with :proxy-new-package."
 ;;;; Swank arglists (autodoc)
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (defmacro with-ps-autodoc-env (&body body)
-  `(let ((swank::*external-valid-function-name-p-hooks*
+  #++`(let ((swank::*external-valid-function-name-p-hooks*
           (cons 'ps::parenscript-function-p
                 swank::*external-valid-function-name-p-hooks*))
          (swank::*external-arglist-hooks*
           (cons 'ps::parenscript-arglist
                 swank::*external-arglist-hooks*)))
-     ,@body))
+     ,@body)
+  `(progn ,@body))
 
 (define-proxy-fun swank::autodoc :ps (raw-form &rest args &key print-right-margin)
   "Return a string representing the arglist for the deepest subform in
