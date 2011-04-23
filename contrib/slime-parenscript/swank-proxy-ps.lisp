@@ -148,10 +148,38 @@
          (ignore-errors
            (with-buffer-syntax ()
              (let* ((name-form (ps-read-from-string name))
-                    (source-loc (gethash name-form ps::*ps-function-location-toplevel-cache*)))
-               source-loc)))))
-    (format t "Would return ~S~%" result)
-    result))
+                    (source-loc (car (gethash name-form ps::*function-location-toplevel-cache*))))
+               (cond
+                 ((assoc :buffer source-loc)
+                  (princ (swank-backend::make-location
+                    (assoc :buffer source-loc)
+                    (assoc :offset source-loc)
+                    (assoc :snippet source-loc))))
+                 ((assoc :file source-loc)
+                  ;; fixme: don't repeat all these ASSOC etc
+                  (print (let* ((pos (or (if (cadr (assoc :position source-loc))
+                                       (1- (cadr (assoc :position source-loc))))
+                                   (when (assoc :form-path source-loc)
+                                     (swank-backend::source-file-position
+                                      (translate-logical-pathname
+                                       (cadr (assoc :file source-loc)))
+                                      (cadr (assoc :modified source-loc))
+                                      (cadr (assoc :form-path source-loc))
+                                      ))))
+                          (snippet (or (cadr (assoc :snippet source-loc))
+                                       (and pos
+                                            (swank-backend::source-hint-snippet
+                                             (translate-logical-pathname
+                                              (cadr (assoc :file source-loc)))
+                                             (cadr (assoc :modified source-loc))
+                                             pos)))))
+                     (swank-backend::make-location
+                      (assoc :file source-loc)
+                      `(:position ,(1+ (or pos 0)))
+                      `(:snippet ,snippet))))
+                  )))))))
+    #++(format t "Would return ~S~%" result)
+    (list (list name result))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;; SWANK-C-P-C
