@@ -187,9 +187,10 @@ emacs with :proxy-new-package."
     (with-buffer-syntax ()
       (let ((p (ps:ps* (read-from-string  string))))
         (swank-proxy::proxy-send-to-client nil p)
-        (make-compilation-result nil t (float
-                                        (/ (- (get-internal-real-time) start)
-                                           internal-time-units-per-second)))))))
+        (make-compilation-result
+         :notes nil :successp t
+         :duration (float (/ (- (get-internal-real-time) start)
+                             internal-time-units-per-second)))))))
       
 
 (define-proxy-fun swank:compile-file-for-emacs :ps (filename load-p &rest r)
@@ -201,9 +202,10 @@ emacs with :proxy-new-package."
     (swank-proxy::proxy-send-to-client
      nil
      compiled)
-    (make-compilation-result nil t (float
-                                    (/ (- (get-internal-real-time) start)
-                                       internal-time-units-per-second)))))
+    (make-compilation-result
+     :notes nil :successp t
+     :duration (float (/ (- (get-internal-real-time) start)
+                         internal-time-units-per-second)))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;; Swank arglists (autodoc)
