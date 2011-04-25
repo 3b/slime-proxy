@@ -11,10 +11,15 @@ communication between host lisp and browser.
   though such a port would only take an hour or so
 * Modified parenscript.  Either [3b's fairly up-to-date branch](http://github.com/3b/parenscript) or
   [gonzojive's older one](http://github.com/gonzojive/parenscript)
+  (for best results you will usually want slime-proxy and parenscript
+   from the same place)
 * [clws](http://github.com/3b/clws)
 * [websockets emulation](http://github.com/gimite/web-socket-js) for
   browsers without native support, included as a git submodule
-* misc libraries: ironclad, anaphora, cl-ppcre, yason
+  (Websockets is available natively in Firefox4, but is disabled due to
+   security concerns. You can enable it in about:config, or use the
+   flash emulation.)
+* misc libraries: ironclad, anaphora, cl-ppcre, yason (see .asd files for exact list)
 
 #### Installation of slime-proxy (and slime-parenscript)
 
@@ -22,33 +27,46 @@ slime-proxy comes with slime-parenscript, which a means of interacting
 with browser-side Javascript through Common Lisp and SLIME.  Here we
 describe how to install both:
 
-Install symbolic links in the slime/contrib directory.  Go into your
-slime contrib directory and add symbolic links to the following files:
+Put the following into `~/.emacs` to tell emacs where to find slime-proxy
+and `slime-proxy-parenscript`, adjusting `path/to/slime-proxy/` as needed:
 
-    slime-proxy.el
-    swank-proxy.lisp
-    slime-parenscript.el
-    swank-parenscript.lisp
+    (add-to-list 'load-path "path/to/slime-proxy/")
+    (add-to-list 'load-path "path/to/slime-proxy/contrib/slime-parenscript/")
 
-Next you need to make ASD files visibile to ASDF so that they may be
-loaded from Common Lisp.  These ASD files are
+Put the following into `~/.swank.lisp` to tell swank how to load the
+CL parts, adjusting `path/to/slime-proxy/` as needed again:
 
-    slime-parenscript.asd
-    slime-proxy.asd
+    (push #P "path/to/slime-proxy/" swank::*load-path*)
+    (push #P "path/to/slime-proxy/contrib/slime-parenscript/" swank::*load-path*)
 
-In your .emacs file, there should be a line like
+Since slime-proxy is rather annoying to load by default, add the
+following function to `~/.emacs`:
 
-    (slime-setup '(slime-repl slime-fancy slime-indentation slime-autodoc))
+    (defun slime-proxy-setup ()
+      (interactive)
+      (slime-setup '(slime-proxy slime-parenscript)))
 
-Add to that slime-proxy and slime-parenscript
-
-    (slime-setup '(slime-proxy slime-parenscript))
-
-Finally, open up slime and type `M-x slime-proxy`.  It will prompt you
+Then, after restarting emacs or evaluating the forms added to `.emacs`
+and `.swank.lisp` by hand, `M-x slime-proxy-setup` will load
+`slime-proxy` (but not start it, you can probably add a call to
+`(slime-proxy)` to `slime-proxy-setup` if you want that).  Once it is
+loaded, you can start it with `M-x slime-proxy`.  It will prompt you
 for "Target for proxy," to which you should type "ps".  Now you have
 got a REPL, and when you hit `C-c C-c` etc. inside of `.paren` files,
 they will be compiled from Parenscript to Javascript and sent to any
 connected browser.
+
+Note that the lisp side of `slime-proxy-parenscript` can take a while
+to load all its dependencies (particularly if they haven't been
+compiled yet), during which time emacs will not respond, and just show
+a 'busy' cursor. To avoid this, you can load `swank-parenscript`
+through `asdf` before starting `slime-proxy`.
+
+
+(If you want to load `slime-proxy` by default, you can add
+`slime-proxy` and `slime-parenscript` to an existing `slime-setup`
+call instead of using `slime-proxy-setup`)
+
 
 #### Connect to slime through a web browser
 
@@ -83,4 +101,14 @@ wsproxy,lisp)
 * autodoc
 * debugger
 * pretty much everything else :p
+
+
+
+
+
+
+
+
+
+
 
