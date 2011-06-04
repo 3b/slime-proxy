@@ -110,11 +110,8 @@
                 (funcall continuation t result)))))
          :async)))))
 
-(define-proxy-fun swank:listener-eval :ps (string)
-  (declare (optimize (debug 3)))
-  (clear-user-input)
-  (with-buffer-syntax ()
-    (with-retry-restart (:msg "Retry (proxied) SLIME REPL evaluation request.")
+(defun eval-common (string continuation)
+  (with-retry-restart (:msg "Retry (proxied) SLIME REPL evaluation request.")
       (proxy-track-package
        (lambda ()
          (let* ((eof (cons nil nil))
@@ -140,7 +137,19 @@
                       (funcall *send-repl-results-function* nil)
                       (funcall continuation eval-ok? result))))))
 
-              :async))))))))
+              :async)))))))
+
+(define-proxy-fun swank:listener-eval :ps (string)
+  (declare (optimize (debug 3)))
+  (clear-user-input)
+  (with-buffer-syntax ()
+    (eval-common string continuation)))
+
+(define-proxy-fun swank:re-evaluate-defvar :ps (string)
+  (declare (optimize (debug 3)))
+  (clear-user-input)
+  (with-buffer-syntax ()
+    (eval-common string continuation)))
 
 (define-proxy-fun swank:find-definitions-for-emacs :ps (name)
   (declare (optimize (debug 3)))
