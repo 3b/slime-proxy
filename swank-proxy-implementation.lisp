@@ -36,12 +36,12 @@ evaluated by PROXY-EVAL-FOR-EMACS."))
 (defmethod proxy-eval ((op t) (proxy-target t) cont &rest args)
   ;; by default, simply call the continuation and return :async
   (format t "unknown proxy-eval command ~s or proxy target ~s~%" (cons op args) proxy-target)
-  (when cont
+  #++(when cont
     (funcall cont nil nil))
   :async
   #+nil
   :pass
-  nil)
+   (format nil "unknown proxy-eval command ~s or proxy target ~s~%" op proxy-target))
 
 (defmacro define-proxy-fun (name target (&rest args) &body body)
   "Defines a method for proxy-eval with NAME and TARGET as eql
