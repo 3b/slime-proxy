@@ -40,6 +40,17 @@ to do with swank proxy."
   (setf (resource-clients resource) (remove client (resource-clients resource))))
 
 (defmethod ws:resource-received-frame ((res swank-proxy-resource) client message)
+  (when (string= message "sync")
+    (loop for i in (loop for i being the hash-keys of *continuations*
+                      collect i)
+       for c = (gethash i *continuations*)
+       when c
+       do
+         (swank::send-to-emacs `(:write-string
+                                 ,(format nil "cancelling continuation ~s~^%" i)
+                                 :proxy))
+         (funcall c nil "cancelled")
+         (remhash i *continuations*)))
   (when (find client (resource-clients res))
     (let* ((string-for-emacs (format nil "[~s] ~s~%" (position client (resource-clients res)) message))
            (r (ignore-errors (yason:parse message)))
