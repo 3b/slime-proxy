@@ -13,7 +13,13 @@
   (let ((*arglist-dispatch-hooks* (cons 'ps-arglist-dispatch
                                         *arglist-dispatch-hooks*))
         (*operator-p-hooks* (cons 'ps-operator-p
-                                  *operator-p-hooks*)))
+                                  *operator-p-hooks*))
+        (swank::*valid-operator-symbol-p-hooks*
+         (cons 'ps::parenscript-function-p
+               swank::*valid-operator-symbol-p-hooks*))
+        (swank-backend::*arglist-hooks*
+         (cons 'ps::parenscript-arglist
+               swank-backend::*arglist-hooks*)))
     (call-next-method)))
 
 ;;; Mostly ordered by how difficult these were to implement
@@ -248,14 +254,13 @@ emacs with :proxy-new-package."
 ;;;; Swank arglists (autodoc)
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (defmacro with-ps-autodoc-env (&body body)
-  #++`(let ((swank::*external-valid-function-name-p-hooks*
+  `(let ((swank::*valid-operator-symbol-p-hooks*
           (cons 'ps::parenscript-function-p
-                swank::*external-valid-function-name-p-hooks*))
-         (swank::*external-arglist-hooks*
+                swank::*valid-operator-symbol-p-hooks*))
+         (swank-backend::*arglist-hooks*
           (cons 'ps::parenscript-arglist
-                swank::*external-arglist-hooks*)))
-     ,@body)
-  `(progn ,@body))
+                swank-backend::*arglist-hooks*)))
+        ,@body))
 
 (define-proxy-fun swank::autodoc :ps (raw-form &rest args &key print-right-margin)
   "Return a string representing the arglist for the deepest subform in
