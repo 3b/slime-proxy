@@ -51,6 +51,8 @@ to do with swank proxy."
                                  :proxy))
          (funcall c nil "cancelled")
          (remhash i *continuations*)))
+  (when (string= message "kick me")
+    (ws:write-to-client client :close))
   (when (find client (resource-clients res))
     (let* ((string-for-emacs (format nil "[~s] ~s~%" (position client (resource-clients res)) message))
            (r (ignore-errors (yason:parse message)))
