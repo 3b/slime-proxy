@@ -3,17 +3,55 @@
 (defvar *swank-proxy-port* 12344
   "Port used for swank-proxy websockets server.")
 
+(defvar *log-stream* t)
+#++
+(progn
+  (when (streamp *log-stream*)
+    (close *log-stream*))
+  (setf *log-stream*
+        (open "/tmp/wsproxy.log" :direction :output :if-exists :append
+              :if-does-not-exist :create)))
+
 (defun splog (format-str &rest format-args)
   "Logging function used by swank proxy."
-  (apply #'format t
+  ;; todo: compiler-macro to pre-compile format string if possible
+  (apply #'format *log-stream*
          (concatenate 'string "SWANK-PROXY: " format-str)
-         format-args))
+         format-args)
+  (force-output *log-stream*))
 
 (defparameter *continuations* (make-hash-table))
 (defparameter *continuations-next-id* 0)
 
+;; if set, default 'active client' validator will only allow active
+;; clients from specified IP, ex. "127.0.0.1", set to NIL to allow
+;; from anywhere
+(defvar *allowed-active-client-ip* "127.0.0.1")
+(defun active-client-limit-ip (client)
+  (if *allowed-active-client-ip*
+      (iolib:address-equal-p (clws:client-host client)
+                             *allowed-active-client-ip*)
+      t))
+
+;; hook for validating 'active' clients
+;; client can be active if one of the functions on the list returns true
+;; before one returns :reject
+(defparameter *active-client-validate-hook* (list 'active-client-limit-ip))
+(defun authorize-active-client (client)
+  (loop for hook in *active-client-validate-hook*
+     for v = (funcall hook client)
+     when (eq v :reject)
+     return nil
+     else if v
+     return t))
+
 (defclass swank-proxy-resource (ws:ws-resource)
   ((clients :initform () :accessor resource-clients)
+   ;; responses from clients other than 'active' client will be ignored
+   ;; aside from possibly being printed.
+   ;; 'active' client may also get extra status messages, like
+   ;; connect/disconnect, or printouts of messages from other clients
+   (active-client :initform nil :accessor active-client)
    #+nil
    (clients-lock :initform (bordeaux-threads:make-lock) :reader resource-clients-lock
                  :documentation "Required to access the clients list")))
@@ -31,13 +69,27 @@ to do with swank proxy."
         res)))
 
 (defmethod ws:resource-accept-connection ((res swank-proxy-resource) resource-name headers client)
-  (splog "Swank add client ~s~%" client)
+  (splog "Swank add client ~s (~s total)~%" client (1+ (length (resource-clients res))))
   (push client (resource-clients res))
+  (when (and (not (active-client res))
+             (authorize-active-client client))
+    (splog "adding active client from ~s~%" (clws:client-host client))
+    (setf (active-client res) client))
   (equal "/swank" resource-name))
 
 (defmethod ws:resource-client-disconnected ((resource swank-proxy-resource) client)
-  (format t "Client disconnected from resource ~A: ~A~%" resource client)
-  (setf (resource-clients resource) (remove client (resource-clients resource))))
+  (splog "Client disconnected from resource ~A: ~A~%" resource client)
+  (setf (resource-clients resource) (remove client (resource-clients resource)))
+  (when (eq client (active-client resource))
+    (splog "removed active client (from ~s)~%" (clws:client-host client))
+    (setf (active-client resource) nil)
+    (loop for i in (resource-clients resource)
+       for x from 0
+       when (authorize-active-client i)
+       do (splog "promoting client ~s (from ~s) to active client~%" x
+                 (clws:client-host i))
+         (setf (active-client resource) i)
+       and return nil)))
 
 (defmethod ws:resource-received-frame ((res swank-proxy-resource) client message)
   (when (string= message "sync")
