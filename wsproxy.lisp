@@ -92,7 +92,9 @@ to do with swank proxy."
        and return nil)))
 
 (defmethod ws:resource-received-frame ((res swank-proxy-resource) client message)
-  (when (string= message "sync")
+  (when (and (eql client (active-client res))
+             (string= message "sync"))
+    (splog "clearing stale continuations...~%")
     (loop for i in (loop for i being the hash-keys of *continuations*
                       collect i)
        for c = (gethash i *continuations*)
