@@ -45,6 +45,11 @@
      else if v
      return t))
 
+(defun authorize-passive-client (resource-name headers client)
+  (splog "auth passive client ~s ~s" resource-name
+         (alexandria:hash-table-plist headers))
+  t)
+
 (defclass swank-proxy-resource (ws:ws-resource)
   ((clients :initform () :accessor resource-clients)
    ;; responses from clients other than 'active' client will be ignored
@@ -63,67 +68,117 @@ to do with swank proxy."
       (let ((res (make-instance 'swank-proxy-resource)))
         (ws:register-global-resource "/swank"
                                      res
-                                     #'ws::any-origin 
+                                     #'ws::any-origin
                                      #+nil
                                      (ws::origin-prefix "http://127.0.0.1" "http://localhost"))
         res)))
 
-(defmethod ws:resource-accept-connection ((res swank-proxy-resource) resource-name headers client)
-  (splog "Swank add client ~s (~s total)~%" client (1+ (length (resource-clients res))))
-  (push client (resource-clients res))
+(defun activate-client (res client)
+  (when (active-client res)
+    (splog "deactivate old active client")
+    (ws:write-to-client (active-client res)
+                        (with-output-to-string (s)
+                          (yason:encode (alexandria:plist-hash-table
+                                         (list "ACTIVATE" t
+                                               "ACTIVE" nil))
+                                        s))))
+  (setf (active-client res) client)
+  (when client
+    (splog "activate new active client")
+    (ws:write-to-client client
+                        (with-output-to-string (s)
+                          (yason:encode (alexandria:plist-hash-table
+                                         (list "ACTIVATE" t
+                                               "ACTIVE" t))
+                                        s))))
+  (splog "activate done~%"))
+
+(defun log-to-active (res message)
+  (when (active-client res)
+    (ws:write-to-client (active-client res)
+                        (with-output-to-string (s)
+                          (yason:encode (alexandria:plist-hash-table
+                                         (list "MESSAGE"
+                                               message))
+                                             s)))))
+
+(defmethod ws:resource-client-connected ((res swank-proxy-resource) client)
+  (splog "resource-client-connected...~%")
   (when (and (not (active-client res))
              (authorize-active-client client))
     (splog "adding active client from ~s~%" (clws:client-host client))
-    (setf (active-client res) client))
-  (equal "/swank" resource-name))
+    (activate-client res client))
+  (log-to-active res (format nil "client connected from ~s" (clws:client-host client)))
+  nil)
+
+(defmethod ws:resource-accept-connection ((res swank-proxy-resource) resource-name headers client)
+  (when (or (authorize-active-client client)
+            (authorize-passive-client resource-name headers client))
+    (splog "Swank add client ~s (~s total)~%" (clws:client-host client) (1+ (length (resource-clients res))))
+    (push client (resource-clients res))
+    (equal "/swank" resource-name)))
 
 (defmethod ws:resource-client-disconnected ((resource swank-proxy-resource) client)
-  (splog "Client disconnected from resource ~A: ~A~%" resource client)
+  (splog "Client disconnected from resource ~A: ~A~%" resource (clws:client-host client))
   (setf (resource-clients resource) (remove client (resource-clients resource)))
   (when (eq client (active-client resource))
     (splog "removed active client (from ~s)~%" (clws:client-host client))
-    (setf (active-client resource) nil)
-    (loop for i in (resource-clients resource)
-       for x from 0
-       when (authorize-active-client i)
-       do (splog "promoting client ~s (from ~s) to active client~%" x
-                 (clws:client-host i))
-         (setf (active-client resource) i)
-       and return nil)))
+    (activate-client
+     resource
+     (loop for i in (resource-clients resource)
+        for x from 0
+        when (authorize-active-client i)
+        do (splog "promoting client ~s (from ~s) to active client~%" x
+                  (clws:client-host i))
+        and return i)))
+  (log-to-active resource (format nil "client disconnected from ~s" (clws:client-host client))))
 
 (defmethod ws:resource-received-frame ((res swank-proxy-resource) client message)
-  (when (and (eql client (active-client res))
-             (string= message "sync"))
-    (splog "clearing stale continuations...~%")
-    (loop for i in (loop for i being the hash-keys of *continuations*
-                      collect i)
-       for c = (gethash i *continuations*)
-       when c
-       do
-         (swank::send-to-emacs `(:write-string
-                                 ,(format nil "cancelling continuation ~s~^%" i)
-                                 :proxy))
-         (funcall c nil "cancelled")
-         (remhash i *continuations*)))
-  (when (string= message "kick me")
-    (ws:write-to-client client :close))
-  (when (find client (resource-clients res))
-    (let* ((string-for-emacs (format nil "[~s] ~s~%" (position client (resource-clients res)) message))
-           (r (ignore-errors (yason:parse message)))
-           (result (when (and r (hash-table-p r)) (gethash "RESULT" r)))
-           (id (when (and r (hash-table-p r)) (gethash "ID" r)))
-           (err (when (and r (hash-table-p r)) (gethash "ERROR" r))))
-      #++(format t "got frame ~s (~s)~%" data s)
-      #++(format t "got response ~s . ~s / ~s~%" result id err)
-      (if id
-          (let ((cont (gethash id *continuations*)))
-            (if cont
-                (if err
-                    (funcall cont nil err)
-                    (funcall cont t result))
-                #++(format t "got cont id ~s but no cont?~%" id))
-            (remhash id *continuations*))
-          (swank::send-to-emacs `(:write-string ,string-for-emacs :proxy))))))
+  (splog "got frame ~s~%" message)
+
+  (cond
+    ((and (eql client (active-client res))
+          (string= message "sync"))
+     (splog "clearing stale continuations...~%")
+     (loop for i in (loop for i being the hash-keys of *continuations*
+                       collect i)
+        for c = (gethash i *continuations*)
+        when c
+        do
+        (swank::send-to-emacs `(:write-string
+                                ,(format nil "cancelling continuation ~s~^%" i)
+                                :proxy))
+        (funcall c nil "cancelled")
+        (remhash i *continuations*)))
+    ((and (string= message "activate")
+          (not (eql client (active-client res)))
+          (authorize-active-client client))
+     (splog "switching active client...~%")
+     (activate-client res client))
+    ((string= message "kick me")
+     (ws:write-to-client client :close))
+    ((eql client (active-client res))
+     (let* ((string-for-emacs (format nil "[~s] ~s~%" (position client (resource-clients res)) message))
+             (r (ignore-errors (yason:parse message)))
+             (result (when (and r (hash-table-p r)) (gethash "RESULT" r)))
+             (id (when (and r (hash-table-p r)) (gethash "ID" r)))
+             (err (when (and r (hash-table-p r)) (gethash "ERROR" r))))
+        #++(format t "got frame ~s (~s)~%" data s)
+        (splog "got response ~s . ~s / ~s~%" result id err)
+        (if id
+            (let ((cont (gethash id *continuations*)))
+              (if cont
+                  (if err
+                      (funcall cont nil err)
+                      (funcall cont t result))
+                  #++(format t "got cont id ~s but no cont?~%" id))
+              (remhash id *continuations*))
+            (swank::send-to-emacs `(:write-string ,string-for-emacs :proxy)))))
+    (t
+     (let* ((string-for-emacs (format nil "[~s] ~s~%" (position client (resource-clients res)) message)))
+       (log-to-active res string-for-emacs)
+
+       (swank::send-to-emacs `(:write-string ,string-for-emacs :proxy))))))
 
 ;; fixme: make this actually be thread-safe.  To do so we should
 ;; probably improve how message-passing works in clws and use some
@@ -159,11 +214,13 @@ RESOURCE is the swank resource"
                                       (list "FORM" form
                                             "ID" cid))
                                      s))))
-       (if (resource-clients resource)
-           (ws:write-to-clients clients message)
-           ;; if there are no clients connected, call the continuation with not-ok
-           (when continuation
-             (funcall continuation nil "Not connected to any proxy clients.")))))))
+       (when (resource-clients resource)
+         (ws:write-to-clients clients message))
+       (unless (active-client resource)
+         ;; if there are no active clients connected, call the continuation with not-ok
+
+         (when continuation
+           (funcall continuation nil "Not connected to any proxy clients.")))))))
 
 ;; This should only execute on the thread listening for
 ;; proxy-channel events. send-form-to-client is the thread-safe version

@@ -27,6 +27,7 @@
     var ws;
     var count = 0;
     var topLevel = this;
+    var active;
     function topLevelEval1(form) {
        var result = {};
     var ok = window.eval(form,"",1,result);
@@ -53,14 +54,28 @@
 //        ws.send("client eval :" + e.data);
     try {
     var j = JSON.parse(e.data);
-    var r = topLevelEval(j["FORM"]);
-    output("eval->: " + JSON.stringify(j));
-    ws.send(JSON.stringify({"OK":true, "RESULT" : r,"ID":j["ID"]})) ;
-    output("eval2->: " + JSON.stringify(r));
-    } catch (e) {
-    ws.send("" + JSON.stringify({"OK":false,"RESULT":null,"ERROR":e,"ID":j["ID"]}));
-    output("eval failed : "+e);
+        if (j["FORM"]) {
+          var r = topLevelEval(j["FORM"]);
+          output("eval->: " + JSON.stringify(j));
+          if (active) {
+            ws.send(JSON.stringify({"OK":true, "RESULT" : r,"ID":j["ID"]})) ;
+          }
+          output("eval2->: " + JSON.stringify(r));
+        } else if (j["ACTIVATE"]) {
+          active = j["ACTIVE"];
+        } else if (j["MESSAGE"]) {
+          output("message:"+ j["MESSAGE"]);
+        }
+      }
+      catch (e) {
+        if (j["FORM"]) {
+          if (active) {
+             ws.send("" + JSON.stringify({"OK":false,"RESULT":null,"ERROR":e,"ID":j["ID"]}));
+          }
+        output("eval failed : "+e);
     }
+      }
+
       };
       ws.onclose = function() {
         output("onclose");
@@ -73,7 +88,7 @@
     
     function onSubmit() {
       var input = document.getElementById("input");
-      ws.send({"WRITE":input.value});
+      ws.send(input.value);
       output("send: " + input.value);
       input.value = "";
       input.focus();
@@ -85,15 +100,23 @@
 
     function clearOutput() {
     var log = document.getElementById("log");
-    log.innerHTML = "";
+  //  log.innerHTML = "";
     }
     function output(str) {
       var log = document.getElementById("log");
-      var escaped = str.replace(/&/, "&amp;").replace(/</, "&lt;").
-        replace(/>/, "&gt;").replace(/"/, "&quot;"); // "
+      var escaped = str.replace(/&/g, "&amp;").replace(/</g, "&lt;").
+        replace(/>/g, "&gt;").replace(/"/g, "&quot;"); // "
        log.innerHTML = escaped + "<br>" + log.innerHTML;
       //log.innerHTML = escaped + " " + count++;
     }
+    function msg(a) {
+    if (active) {
+        output('===== ' + a);
+    } else {
+        ws.send('' + a);
+    };
+    return ('' + a);
+};
 
   </script>
 </head><body onload="init();">
@@ -104,4 +127,5 @@
   </form>
   <canvas id="canvas" width="300" height="300"></canvas>
   <div id="log"></div>
+  <div id="messages"></div>
 </body></html>
