@@ -29,7 +29,7 @@
          (cmd (aref console-commands (chain parts (shift)))))
     (chain ($ "#slime-proxy-console-input-text") (val ""))
     ;; fixme: decide where this goes or conditionalize it or something
-    (send-message (+ "input: " input))
+    ((@ +swank_proxy+ send-message) (+ "input: " input))
     (line (+ "> " input ""))
     (when cmd
       (apply cmd parts))))
