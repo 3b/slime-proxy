@@ -101,6 +101,13 @@ to do with swank proxy."
                                          (list "MESSAGE"
                                                message))
                                              s)))))
+(defun log-to-client (client message)
+  (ws:write-to-client client
+                      (with-output-to-string (s)
+                        (yason:encode (alexandria:plist-hash-table
+                                       (list "MESSAGE"
+                                             message))
+                                      s))))
 
 (defmethod ws:resource-client-connected ((res swank-proxy-resource) client)
   (splog "resource-client-connected...~%")
@@ -150,11 +157,15 @@ to do with swank proxy."
                                 :proxy))
         (funcall c nil "cancelled")
         (remhash i *continuations*)))
-    ((and (string= message "activate")
-          (not (eql client (active-client res)))
-          (authorize-active-client client))
-     (splog "switching active client...~%")
-     (activate-client res client))
+    ((and (string= message "activate"))
+     (cond
+       ((eql client (active-client res))
+        (log-to-client client "already active"))
+       ((authorize-active-client client)
+        (splog "switching active client...~%")
+        (activate-client res client))
+       (t
+        (log-to-client client "login failed"))))
     ((string= message "kick me")
      (ws:write-to-client client :close))
     ((eql client (active-client res))
