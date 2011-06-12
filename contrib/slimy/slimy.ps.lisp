@@ -67,7 +67,10 @@
             (output (+ "@@ activate : " (@ j "ACTIVE")))
             (setf active (@ j "ACTIVE")))
            ((@ j "MESSAGE")
-            (output (+ "message: " (@ j "MESSAGE"))))))
+            (output (+ "message: " (@ j "MESSAGE")))
+            (when (and (@ j "IMG") ui)
+              (chain ui (html-line (ps-html
+                                    ((:img :src (@ j "IMG"))))))))))
        (:catch (e)
          (when (@ j "FORM")
            (when (and console (@ console log))

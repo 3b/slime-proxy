@@ -93,21 +93,19 @@ to do with swank proxy."
                                         s))))
   (splog "activate done~%"))
 
-(defun log-to-active (res message)
-  (when (active-client res)
-    (ws:write-to-client (active-client res)
+(defun log-to-client (client message &key image)
+    (ws:write-to-client client
                         (with-output-to-string (s)
                           (yason:encode (alexandria:plist-hash-table
-                                         (list "MESSAGE"
-                                               message))
-                                             s)))))
-(defun log-to-client (client message)
-  (ws:write-to-client client
-                      (with-output-to-string (s)
-                        (yason:encode (alexandria:plist-hash-table
-                                       (list "MESSAGE"
-                                             message))
-                                      s))))
+                                         `("MESSAGE"
+                                           ,message
+                                           ,@(when image
+                                               (list "IMG" image))))
+                                             s))))
+
+(defun log-to-active (res message &key image)
+  (when (active-client res)
+    (log-to-client (active-client res) message :image image)))
 
 (defmethod ws:resource-client-connected ((res swank-proxy-resource) client)
   (splog "resource-client-connected...~%")
@@ -140,6 +138,44 @@ to do with swank proxy."
         and return i)))
   (log-to-active resource (format nil "client disconnected from ~s" (clws:client-host client))))
 
+(defun valid-data-url (string)
+  (labels ((base64chars (start)
+             (loop for i from start below (length string)
+                   for c = (aref string i)
+                   ;; a-z A-Z 0-9 _-
+                   always (or (char<= #\a c #\z)
+                              (char<= #\A c #\Z)
+                              (char<= #\0 c #\9)
+                              ;; not sure exactly which set of
+                              ;; characters is valid, possibly should
+                              ;; at least reject whitespace?
+                              (char= c #\_)
+                              (char= c #\-)
+                              (char= c #\/)
+                              (char= c #\+)
+                              (char= c #\=)
+                              (char= c #\space)
+                              (char= c #\linefeed))))
+           (try-type (type)
+             (and (alexandria:starts-with-subseq type string)
+                  (base64chars (length type)))))
+    (or
+     (try-type "data:image/gif;base64,")
+     (try-type "data:image/png;base64,")
+     (try-type "data:image/jpeg;base64,"))))
+#++
+(valid-data-url "data:image/gif;base64,R0lGODdhMAAwAPAAAAAAAP///ywAAAAAMAAw
+   AAAC8IyPqcvt3wCcDkiLc7C0qwyGHhSWpjQu5yqmCYsapyuvUUlvONmOZtfzgFz
+   ByTB10QgxOR0TqBQejhRNzOfkVJ+5YiUqrXF5Y5lKh/DeuNcP5yLWGsEbtLiOSp
+   a/TPg7JpJHxyendzWTBfX0cxOnKPjgBzi4diinWGdkF8kjdfnycQZXZeYGejmJl
+   ZeGl9i2icVqaNVailT6F5iJ90m6mvuTS4OK05M0vDk0Q4XUtwvKOzrcd3iq9uis
+   F81M1OIcR7lEewwcLp7tuNNkM3uNna3F2JQFo97Vriy/Xl4/f1cf5VWzXyym7PH
+   hhx4dbgYKAAA7")
+#++
+(valid-data-url "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAUA
+AAAFCAYAAACNbyblAAAAHElEQVQI12P4//8/w38GIAXDIBKE0DHxgljNBAAO
+9TXL0Y4OHwAAAABJRU5ErkJggg==")
+
 (defmethod ws:resource-received-frame ((res swank-proxy-resource) client message)
   (splog "got frame ~s~%" message)
 
@@ -168,6 +204,8 @@ to do with swank proxy."
         (log-to-client client "login failed"))))
     ((string= message "kick me")
      (ws:write-to-client client :close))
+    ((valid-data-url message)
+     (log-to-active res (format nil "image [~s]" (position client (resource-clients res))) :image message))
     ((eql client (active-client res))
      (let* ((string-for-emacs (format nil "[~s] ~s~%" (position client (resource-clients res)) message))
              (r (ignore-errors (yason:parse message)))
