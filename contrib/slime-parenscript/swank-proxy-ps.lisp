@@ -172,12 +172,13 @@
                     (assoc :snippet source-loc))))
                  ((assoc :file source-loc)
                   ;; fixme: don't repeat all these ASSOC etc
-                  (let* ((pos (or (if (cadr (assoc :position source-loc))
+                  (let* ((f (assoc :file source-loc))
+                         (pos (or (if (cadr (assoc :position source-loc))
                                       (1- (cadr (assoc :position source-loc))))
                                   (when (assoc :form-path source-loc)
                                     (swank-backend::source-file-position
                                      (translate-logical-pathname
-                                      (cadr (assoc :file source-loc)))
+                                      (cadr f))
                                      (cadr (assoc :modified source-loc))
                                      (cadr (assoc :form-path source-loc))
                                      ))))
@@ -185,11 +186,13 @@
                                       (and pos
                                            (swank-backend::source-hint-snippet
                                             (translate-logical-pathname
-                                             (cadr (assoc :file source-loc)))
+                                             (cadr f))
                                             (cadr (assoc :modified source-loc))
                                             pos)))))
                     (swank-backend::make-location
-                     (assoc :file source-loc)
+                     (if (pathnamep (cadr f))
+                         `(:file ,(namestring (cadr f)))
+                         f)
                      `(:position ,(1+ (or pos 0)))
                      `(:snippet ,snippet)))
                   )))))))
