@@ -93,7 +93,7 @@
   (when ws
     ((@ ws #:close))))
 
-(defun-wrapped (+swank_proxy+ init) ()
+(defun-wrapped (+swank_proxy+ connect) ()
   (when ws
     (close))
   (when (/= (typeof +swank_proxy_ui+) "undefined")
@@ -116,9 +116,18 @@
   (setf (@ console-commands "sync")
         (lambda () (send-message "sync")))
   (setf (@ console-commands "kick")
-        (lambda () (send-message "kick me"))))
+        (lambda () (send-message "kick me")))
+  (setf (@ console-commands "connect")
+        (lambda () (connect))))
 
-(init)
+;; possibly this should be delayed until page finishes loading?
+(let ((q (chain window location search (to-string))))
+  (when (and (= (chain q (char-at 0)) "?")
+             (<= 0 (chain q (substring 1)
+                          (split "&")
+                          (index-of "debug"))))
+    (connect)))
+
 
 #++
 (setf (@ ((@ document get-element-by-id ) "hh") inner-h-t-m-l)
