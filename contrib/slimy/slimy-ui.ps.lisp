@@ -66,6 +66,51 @@
          (fade-out "slow"))
   nil)
 
+(defun-wrapped (+swank_proxy_ui+ hide-show-key) (ev)
+  (cond
+    ((= (@ ev key-code) 192)
+    ;; `/~ key :
+    ;; if console is hidden, show it and focus input area
+    ;; if console is visible and not focused, hide it
+    ;; if console is visible and focused, and input is empty, hide it
+    ;; if console is visible, focused, and has input, ignore key
+    ;; todo: other keyboard mappings?
+     (cond
+       ((not (chain ($ "#slime-proxy-console") (is ":visible")))
+        (show-console)
+        (chain ($ (@ "#slime-proxy-console-input-text"))
+               (focus)))
+       ((not (chain ($ (@ "#slime-proxy-console-input-text"))
+                    (is ":focus")))
+        (toggle-minimize))
+       ((and (chain ($ "#slime-proxy-console-input-text")
+                    (is ":focus")))
+        (let* ((i ($ "#slime-proxy-console-input-text"))
+               (v (chain i (val))))
+          (when (or (= v "") (= v "`") (= v "~"))
+            (chain i (val ""))
+            (toggle-minimize))))
+       (t
+        (line (+ "focus="
+                 (chain ($ "#slime-proxy-console-input-text")
+                        (is ":focus"))
+                 "input = |" (chain ($ "#slime-proxy-console-input-text")
+                                    (val))
+                 "|")))))
+    ((= (@ ev key-code) 27)
+     ;; esc:
+     ;; if focused and have input, clear input
+     ;; if focus and no input, close console
+     ((and (chain ($ "#slime-proxy-console-input-text")
+                  (is ":focus")))
+      (let* ((i ($ "#slime-proxy-console-input-text"))
+             (v (chain i (val))))
+        (if (or (= v ""))
+            (toggle-minimize)
+            (chain i (val ""))))))
+    (t
+     nil #++(line (+ "key " (@ ev key-code))))))
+
 (defun-wrapped (+swank_proxy_ui+ init) ()
   (let ((ci ($ "#slime-proxy-icon")))
     (when (= 0 (chain ci (size)))
@@ -146,6 +191,9 @@
                    (<= 0 (chain p (index-of "console")))
                    (<= 0 (chain p (index-of "console=on")))))
       (show-console)))
+  (chain ($ (@ document document-element))
+         (keyup (lambda (e)
+                  (hide-show-key e))))
   nil)
 #++
 (init)
