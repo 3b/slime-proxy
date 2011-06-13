@@ -37,9 +37,45 @@
 (defun-wrapped (+swank_proxy_ui+ input-submit-handler) ()
   (let* ((input (chain ($ "#slime-proxy-console-input-text") (val))))
     (handle-console-input input))
-  #:false
-)
+  #:false)
+
+(defun-wrapped (+swank_proxy_ui+ toggle-minimize) ()
+  (chain ($ "#slime-proxy-console")
+         (fade-toggle "slow"))
+  (chain ($ "#slime-proxy-icon")
+         (fade-toggle "slow"))
+  nil)
+
+(defun-wrapped (+swank_proxy_ui+ show-console) ()
+  (chain ($ "#slime-proxy-console")
+         (fade-in "slow"))
+  (chain ($ "#slime-proxy-icon")
+         (fade-out "slow"))
+  nil)
+
 (defun-wrapped (+swank_proxy_ui+ init) ()
+  (let ((ci ($ "#slime-proxy-icon")))
+    (when (= 0 (chain ci (size)))
+      (chain ($ "body")
+             (append (ps-html ((:div :id "slime-proxy-icon") "ci"))))
+      (setf ci ($ "#slime-proxy-icon")))
+    (chain ci
+           (css (create "position" "fixed"
+                        "bottom" "0"
+                        "left" "0"
+                        "color" "green"
+                        "border" "1px solid green"
+                        "padding" "0"
+                        "margin" "0"
+                        "background" "rgb(0,0,0) transparent"
+                        "background" "rgba(0,0,0,0.9)"
+                        "height" "1em"
+                        "width" "1em"
+                        "text-align" "center"
+                        "text-shadow" "0 0 0.8em green, 0 0 5em green"))
+           (text "~")
+           (click (lambda () (toggle-minimize)))))
+
   (let ((cc ($ "#slime-proxy-console")))
     ;; create a div to use for the UI if it doens't already exist
     (when (= 0 (chain cc (size)))
@@ -67,6 +103,9 @@
                         "font-size" "8pt"))
            (html
             (ps-html
+             ((:div :id "slime-proxy-console-close"
+                    :style "position:absolute;left:0;top:0;width:1em;height:1em;text-align:center;border:solid green; border-width:0 1px 1px;font-size:1.3em;")
+              "X")
              ((:div :id "slime-proxy-console-output"
                     :style "overflow:auto; max-height:30em;")
               (:h2 "..."))
@@ -82,7 +121,18 @@
                ((:input :type :text
                         :id "slime-proxy-console-input-text"
                         :style "text-indent:1.5em;margin:0;width:100%;background:none;color:green;border:0"
-                        :on))))))))
+                        :on))))))
+           (hide))
+    (chain ($ "#slime-proxy-console-close") (click (lambda () (toggle-minimize)))))
+  (let*((q (chain window location search (to-string)))
+        (p (and (= (chain q (char-at 0)) "?")
+                (chain q (substring 1)
+                       (split "&")))))
+    (when (and (not (<= 0 (chain p (index-of "console=off"))))
+               (or (<= 0 (chain p (index-of "debug")))
+                   (<= 0 (chain p (index-of "console")))
+                   (<= 0 (chain p (index-of "console=on")))))
+      (show-console)))
   nil)
 #++
 (init)
