@@ -3,7 +3,19 @@
 
 (defvar #:+swank_proxy_ui+ (or #:+swank_proxy_ui+ (create)))
 
+(defvar-wrapped (+swank_proxy_ui+ scroll-size) 1000)
+
+(defun-wrapped (+swank_proxy_ui+ trim-scroll) ()
+  (let* ((cc (chain ($ "#slime-proxy-console-output")
+                    (children)))
+         (count (chain cc (size))))
+    (when (>= count scroll-size)
+      (chain cc
+             (slice 0 (- (1- scroll-size)))
+             (remove)))))
+
 (defun-wrapped (+swank_proxy_ui+ line) (message)
+  (trim-scroll)
   (let ((cc ($ "#slime-proxy-console-output")))
     (chain cc
            (append (ps-html ((:div :style "white-space:pre-wrap")))))
@@ -15,6 +27,7 @@
                           (chain cc (height)))))))
 
 (defun-wrapped (+swank_proxy_ui+ html-line) (message)
+  (trim-scroll)
   (let ((cc ($ "#slime-proxy-console-output")))
     (chain cc
            (append (ps-html ((:div :style "white-space:pre-wrap") message)))
