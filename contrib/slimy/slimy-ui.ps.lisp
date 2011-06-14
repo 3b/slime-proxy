@@ -34,7 +34,8 @@
            (scroll-top (- (chain cc (prop "scrollHeight"))
                           (chain cc (height)))))))
 
-(defvar-wrapped (+swank_proxy_ui+ console-commands) (create))
+(defvar-wrapped (+swank_proxy_ui+ console-commands)
+    (or (@ +swank_proxy_ui+ console-commands) (create)))
 
 (defun-wrapped (+swank_proxy_ui+ handle-console-input) (input)
   ;;default input parser, not very smart... eventually should be configurable
