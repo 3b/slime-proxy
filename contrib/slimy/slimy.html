@@ -77,9 +77,11 @@
       }
 
       };
-      ws.onclose = function() {
-        output("onclose");
+      ws.onclose = function(e) {
+        output("onclose (" + e.code + "/" + e.reason+")" );
       };
+
+
       ws.onerror = function() {
         output("onerror");
       };

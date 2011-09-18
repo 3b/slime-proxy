@@ -29,7 +29,7 @@
 (defvar *allowed-active-client-ip* "127.0.0.1")
 (defun active-client-limit-ip (client)
   (if *allowed-active-client-ip*
-      (iolib:address-equal-p (clws:client-host client)
+      (string= (clws:client-host client)
                              *allowed-active-client-ip*)
       t))
 
@@ -76,32 +76,32 @@ to do with swank proxy."
 (defun activate-client (res client)
   (when (active-client res)
     (splog "deactivate old active client")
-    (ws:write-to-client (active-client res)
-                        (with-output-to-string (s)
-                          (yason:encode (alexandria:plist-hash-table
-                                         (list "ACTIVATE" t
-                                               "ACTIVE" nil))
-                                        s))))
+    (ws:write-to-client-text (active-client res)
+                             (with-output-to-string (s)
+                               (yason:encode (alexandria:plist-hash-table
+                                              (list "ACTIVATE" t
+                                                    "ACTIVE" nil))
+                                             s))))
   (setf (active-client res) client)
   (when client
     (splog "activate new active client")
-    (ws:write-to-client client
-                        (with-output-to-string (s)
-                          (yason:encode (alexandria:plist-hash-table
-                                         (list "ACTIVATE" t
-                                               "ACTIVE" t))
-                                        s))))
+    (ws:write-to-client-text client
+                             (with-output-to-string (s)
+                               (yason:encode (alexandria:plist-hash-table
+                                              (list "ACTIVATE" t
+                                                    "ACTIVE" t))
+                                             s))))
   (splog "activate done~%"))
 
 (defun log-to-client (client message &key image)
-    (ws:write-to-client client
-                        (with-output-to-string (s)
-                          (yason:encode (alexandria:plist-hash-table
-                                         `("MESSAGE"
-                                           ,message
-                                           ,@(when image
-                                               (list "IMG" image))))
-                                             s))))
+  (ws:write-to-client-text client
+                           (with-output-to-string (s)
+                             (yason:encode (alexandria:plist-hash-table
+                                            `("MESSAGE"
+                                              ,message
+                                              ,@(when image
+                                                  (list "IMG" image))))
+                                           s))))
 
 (defun log-to-active (res message &key image)
   (when (active-client res)
@@ -109,6 +109,8 @@ to do with swank proxy."
 
 (defmethod ws:resource-client-connected ((res swank-proxy-resource) client)
   (splog "resource-client-connected...~%")
+  (splog "Swank add client ~s (~s total)~%" (clws:client-host client) (1+ (length (resource-clients res))))
+  (push client (resource-clients res))
   (when (and (not (active-client res))
              (authorize-active-client client))
     (splog "adding active client from ~s~%" (clws:client-host client))
@@ -117,11 +119,8 @@ to do with swank proxy."
   nil)
 
 (defmethod ws:resource-accept-connection ((res swank-proxy-resource) resource-name headers client)
-  (when (or (authorize-active-client client)
-            (authorize-passive-client resource-name headers client))
-    (splog "Swank add client ~s (~s total)~%" (clws:client-host client) (1+ (length (resource-clients res))))
-    (push client (resource-clients res))
-    (equal "/swank" resource-name)))
+  (or (authorize-active-client client)
+      (authorize-passive-client resource-name headers client)))
 
 (defmethod ws:resource-client-disconnected ((resource swank-proxy-resource) client)
   (splog "Client disconnected from resource ~A: ~A~%" resource (clws:client-host client))
@@ -176,7 +175,7 @@ to do with swank proxy."
 AAAFCAYAAACNbyblAAAAHElEQVQI12P4//8/w38GIAXDIBKE0DHxgljNBAAO
 9TXL0Y4OHwAAAABJRU5ErkJggg==")
 
-(defmethod ws:resource-received-frame ((res swank-proxy-resource) client message)
+(defmethod ws:resource-received-text ((res swank-proxy-resource) client message)
   (splog "got frame ~s~%" message)
 
   (cond
@@ -203,7 +202,7 @@ AAAFCAYAAACNbyblAAAAHElEQVQI12P4//8/w38GIAXDIBKE0DHxgljNBAAO
        (t
         (log-to-client client "login failed"))))
     ((string= message "kick me")
-     (ws:write-to-client client :close))
+     (ws:write-to-client-close client :code 31337 :message "Pwned"))
     ((valid-data-url message)
      (log-to-active res (format nil "image [~s]" (position client (resource-clients res))) :image message))
     ((eql client (active-client res))
@@ -264,7 +263,7 @@ RESOURCE is the swank resource"
                                             "ID" cid))
                                      s))))
        (when (resource-clients resource)
-         (ws:write-to-clients clients message))
+         (ws:write-to-clients-text clients message))
        (unless (active-client resource)
          ;; if there are no active clients connected, call the continuation with not-ok
 
@@ -326,3 +325,6 @@ okay or not, and (2) the result."
   (let ((res (main-swank-proxy-resource)))
     (setf (resource-clients res) nil)
     (ws:run-resource-listener res)))
+
+#++
+(start-websockets-proxy-server :kill-existing t)
