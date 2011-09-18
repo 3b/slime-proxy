@@ -61,6 +61,10 @@
    (clients-lock :initform (bordeaux-threads:make-lock) :reader resource-clients-lock
                  :documentation "Required to access the clients list")))
 
+(defun swank-proxy-check-origin (c)
+  (splog "check origin ~s|~%" c)
+  t)
+
 (defun main-swank-proxy-resource ()
   "Returns the websockets resource we use for pretty much everything
 to do with swank proxy."
@@ -68,7 +72,7 @@ to do with swank proxy."
       (let ((res (make-instance 'swank-proxy-resource)))
         (ws:register-global-resource "/swank"
                                      res
-                                     #'ws::any-origin
+                                     'swank-proxy-check-origin
                                      #+nil
                                      (ws::origin-prefix "http://127.0.0.1" "http://localhost"))
         res)))
@@ -118,9 +122,31 @@ to do with swank proxy."
   (log-to-active res (format nil "client connected from ~s" (clws:client-host client)))
   nil)
 
+;; new client defaults to sending either "page=path" where <path> is
+;; window.location.pathname, or "auth=<foo>" where foo is specified
+;; with token=foo in url query params, or as argument to "connect"
+;; console command
+;; todo: support connections for multiple pages at once?
+(defvar *resource-query-token* "page=/test/test.html"
+  "if set, clients will be rejected if they don't send a resource of
+the form \"/swank?<token>\" where <token> is the contents of this
+variable. If not set, \"/swank\" or any resource starting with
+\"/swank?\" will be accepted.")
+
+(defun check-resource-and-connection-token (resource-name query)
+  ;; TODO: split up query command to allow for multiple criteria, like
+  ;; specific page + auth token?
+  (splog "checking client resource, token=~s, got ~s / s~%" *resource-query-token*
+         resource-name query)
+  (if *resource-query-token*
+      (equalp query *resource-query-token*)
+      (equal resource-name "/swank")))
+
 (defmethod ws:resource-accept-connection ((res swank-proxy-resource) resource-name headers client)
-  (or (authorize-active-client client)
-      (authorize-passive-client resource-name headers client)))
+  (and (or (authorize-active-client client)
+           (authorize-passive-client resource-name headers client))
+       (check-resource-and-connection-token resource-name
+                                            (ws:client-query-string client))))
 
 (defmethod ws:resource-client-disconnected ((resource swank-proxy-resource) client)
   (splog "Client disconnected from resource ~A: ~A~%" resource (clws:client-host client))

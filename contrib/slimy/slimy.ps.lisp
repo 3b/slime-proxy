@@ -93,22 +93,47 @@
   (when ws
     ((@ ws #:close))))
 
-(defun-wrapped (+swank_proxy+ connect) ()
+(defun-wrapped (+swank_proxy+ connect) (&optional token)
   (when ws
     (close))
   (when (/= (typeof +swank_proxy_ui+) "undefined")
     ((@ console log) "ui")
     (setf ui +swank_proxy_ui+))
-  (setf ws (new (#:*web-socket
-                 (+ "ws://" (@ window location hostname) ":12344/swank")))
-        (@ ws #:onopen) (lambda ()
-                          (output "onopen"))
-        (@ ws #:onmessage) (lambda (e)
-                             (handle-message (@ e data)))
-        (@ ws #:onclose) (lambda ()
-                           (output "onclose"))
-        (@ ws #:onerror) (lambda ()
-                           (output "onerror"))))
+  (let ((q (chain window location search (to-string))))
+    (if (and q (= (chain q (char-at 0)) "?"))
+        (let ((o (chain q (substring 1)
+                        (split "&"))))
+          (setf q #:false)
+          (loop for i in o
+                for s = (chain i (split "="))
+                when (and s (= (aref s 0) "token"))
+                  do (setf q (aref s 1))))
+        (setf q #:false))
+    (output (+ "open "
+               "ws://" (@ window location hostname) ":12344/swank"
+               ;; this should eventually send both page= and auth=
+               ;; params, once host is smart enough to parse out
+               ;; the one it wants...
+               "?" (if (or token q)
+                       (+ "auth=" (or token q))
+                       (+ "page="(@ window location pathname)))))
+    (setf ws (new ((or #++ #:*moz-web-socket #:*web-socket)
+                   (+ "ws://" (@ window location hostname) ":12344/swank"
+                      ;; this should eventually send both page= and auth=
+                      ;; params, once host is smart enough to parse out
+                      ;; the one it wants...
+                      "?" (if (or token q)
+                              (+ "auth=" (or token q))
+                              (+ "page="(@ window location pathname))))))
+          (@ ws #:onopen) (lambda ()
+                            (output "onopen"))
+          (@ ws #:onmessage) (lambda (e)
+                               (handle-message (@ e data)))
+          (@ ws #:onclose) (lambda ()
+                             (output "onclose"))
+          (@ ws #:onerror) (lambda ()
+                             (output "onerror")))
+    (output (+ "ws = " ws " state=" (@ ws #:ready-state)))))
 
 (when (/= (typeof +swank_proxy_ui+) "undefined")
   (setf (@ console-commands "activate")
@@ -118,7 +143,7 @@
   (setf (@ console-commands "kick")
         (lambda () (send-message "kick me")))
   (setf (@ console-commands "connect")
-        (lambda () (connect))))
+        (lambda (a) (connect a))))
 
 ;; possibly this should be delayed until page finishes loading?
 (let ((q (chain window location search (to-string))))
