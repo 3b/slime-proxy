@@ -117,7 +117,9 @@
                "?" (if (or token q)
                        (+ "auth=" (or token q))
                        (+ "page="(@ window location pathname)))))
-    (setf ws (new ((or #++ #:*moz-web-socket #:*web-socket)
+    (setf ws (new ((if (= (typeof #:*moz-web-socket) "undefined")
+                       #:*web-socket
+                       #:*moz-web-socket)
                    (+ "ws://" (@ window location hostname) ":12344/swank"
                       ;; this should eventually send both page= and auth=
                       ;; params, once host is smart enough to parse out

@@ -30,14 +30,13 @@
 ;; which expands to a call to the function in the object/
 (defpsmacro defun-wrapped ((&rest scoped-name) lambda-list &body body)
   (let ((w (gensym)))
-    (print
-     `(progn
-        (defmacro ,(car (last scoped-name)) (&whole ,w ,@lambda-list)
-          `(funcall (ps:@ ,@',scoped-name) ,@(cdr ,w)))
-        (setf (@ ,@scoped-name)
-              (lambda ,lambda-list
-                ,@body))
-        ))))
+    `(progn
+       (defmacro ,(car (last scoped-name)) (&whole ,w ,@lambda-list)
+         `(funcall (ps:@ ,@',scoped-name) ,@(cdr ,w)))
+       (setf (@ ,@scoped-name)
+             (lambda ,lambda-list
+               ,@body))
+       )))
 ;; same thing for variables, member in object + symbol-macro to access it
 (defpsmacro defvar-wrapped ((&rest scoped-name) value)
   `(progn
