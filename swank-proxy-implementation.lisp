@@ -22,7 +22,7 @@
   (:documentation "Subclass of the main slime channel class used for
   slime-proxy."))
 
-(defclass proxy-listener-channel (proxy-channel listener-channel)
+(defclass proxy-listener-channel (proxy-channel)
   ())
 
 (defgeneric proxy-eval (op proxy-target continuation &rest args)
@@ -80,11 +80,11 @@ form, uses PROXY-EVAL-FORM"
                  (declare (ignore ignored))
                  `(let ((*buffer-package* b)
                         (*buffer-readtable* brt)
-                        (*pending-continuations* pc)
-                        (*emacs-connection* conn))
+                        (*pending-continuations* pc))
                     (check-type *buffer-package* package)
                     (check-type *buffer-readtable* readtable)
-                    ,@body)))
+                    (with-connection (conn)
+                      ,@body))))
       (flet ((cont (ok result)
                ;; fixme what about the not-okay case?
                (with-dynamic-bindings-for-proxy-eval ()
@@ -141,9 +141,7 @@ fixme: this function has a very tentative interface"))
 
 (defmethod proxy-create-channel (target &key remote)
   (make-instance 'proxy-listener-channel
-                 :target target
-                 :remote remote
-                 :env (initial-listener-bindings remote)))
+                 :target target))
 
 (defslimefun create-proxy-listener (remote target)
   ;; fixme: move most of this into proxy-create-channel

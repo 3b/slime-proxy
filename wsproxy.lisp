@@ -334,14 +334,14 @@ okay or not, and (2) the result."
     (maybe-setf *swank-proxy-ws-thread*
                 (bordeaux-threads:make-thread
                  (lambda ()
-                   (let ((swank::*emacs-connection* con))
+                   (swank::with-connection (con)
                      (ws:run-server port)))
                  :name "swank-proxy websockets server"))
 
     (maybe-setf *swank-proxy-resource-thread*
                 (bordeaux-threads:make-thread
                  (lambda ()
-                   (let ((swank::*emacs-connection* con))
+                   (swank::with-connection (con)
                      (run-swank-proxy-resource-server)))
                  :name "swank-proxy resource handler"))))
   (list *swank-proxy-ws-thread* *swank-proxy-resource-thread*))

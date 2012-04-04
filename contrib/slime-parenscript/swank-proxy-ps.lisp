@@ -145,7 +145,7 @@
 
               :async)))))))
 
-(define-proxy-fun swank:listener-eval :ps (string)
+(define-proxy-fun swank::listener-eval :ps (string)
   (declare (optimize (debug 3)))
   (clear-user-input)
   (with-buffer-syntax ()

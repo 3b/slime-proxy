@@ -4,7 +4,7 @@
             "Red Daly            <reddaly@gmail.com>")
   (:license "elisp code is GPL, Common Lisp Code is BSD?")
   (:slime-dependencies slime-repl)
-  (:swank-dependencies swank-proxy)
+  (:swank-dependencies swank-proxy swank-repl)
   (:on-load
    ))
 
