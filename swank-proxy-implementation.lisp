@@ -37,11 +37,11 @@ evaluated by PROXY-EVAL-FOR-EMACS."))
   ;; by default, simply call the continuation and return :async
   (format t "unknown proxy-eval command ~s or proxy target ~s~%" (cons op args) proxy-target)
   #++(when cont
-    (funcall cont nil nil))
+       (funcall cont nil nil))
   :async
   #+nil
   :pass
-   (format nil "unknown proxy-eval command ~s or proxy target ~s~%" op proxy-target))
+  (format nil "unknown proxy-eval command ~s or proxy target ~s~%" op proxy-target))
 
 (defmacro define-proxy-fun (name target (&rest args) &body body)
   "Defines a method for proxy-eval with NAME and TARGET as eql
@@ -52,8 +52,8 @@ lambda-list to destructure whatever remaining parameters are passed to
 proxy-eval. "
   (let ((rest (gensym)))
     `(defmethod proxy-eval ((op (eql ',name)) (target (eql ',target)) continuation &rest ,rest)
-      (destructuring-bind (,args) ,rest
-        ,@body))))
+       (destructuring-bind (,args) ,rest
+         ,@body))))
 
 (defgeneric proxy-eval-form (form target continuation)
   (:documentation ""))
@@ -89,7 +89,7 @@ form, uses PROXY-EVAL-FORM"
                ;; fixme what about the not-okay case?
                (with-dynamic-bindings-for-proxy-eval ()
                  (run-hook *pre-reply-hook*)
-                 ;(format t "About to send to emacs: ~A~%" result)
+                                        ;(format t "About to send to emacs: ~A~%" result)
                  (send-to-emacs `(:return ,thread
                                           ,(if ok
                                                `(:ok ,result)
@@ -100,7 +100,7 @@ form, uses PROXY-EVAL-FORM"
         (let (ok result)
           (unwind-protect
                (with-dynamic-bindings-for-proxy-eval ()
-                 ;; APPLY would be cleaner than EVAL. 
+                 ;; APPLY would be cleaner than EVAL.
                  ;; (setq result (apply (car form) (cdr form)))
                  (setq result
                        (with-slime-interrupts (proxy-eval-form form (channel-target channel)
@@ -109,7 +109,7 @@ form, uses PROXY-EVAL-FORM"
                  (when (eql result :pass)
                    (setf result
                          (eval-for-emacs  form *buffer-package* id))))
-                   
+
             (when (not (eq result :async))
               (cont ok result))))))))
 
@@ -123,16 +123,16 @@ form, uses PROXY-EVAL-FORM"
   #+nil(format t "proxy ~s~%" (list channel args))
   (case (car args)
     (:emacs-rex
-       (destructuring-bind (form package thread id &rest r) (cdr args)
-         (declare (ignore r))
-         ;;(format t "form ~s~% package ~s~% id ~S~%" form package id)
-         (proxy-eval-for-emacs form channel thread package id)
-         #++(let ((swank-backend::*proxy-interfaces* (make-hash-table)))
-              (eval-for-emacs form package id))))))
+     (destructuring-bind (form package thread id &rest r) (cdr args)
+       (declare (ignore r))
+       ;;(format t "form ~s~% package ~s~% id ~S~%" form package id)
+       (proxy-eval-for-emacs form channel thread package id)
+       #++(let ((swank-backend::*proxy-interfaces* (make-hash-table)))
+            (eval-for-emacs form package id))))))
 
 
 ;; SPAWN-PROXY-THREAD and CREATE-PROXY-LISTENER set up the swank-proxy
-;; thread that listens in on SWANK events and  
+;; thread that listens in on SWANK events and
 (defgeneric proxy-create-channel (target &key remote)
   (:documentation "Returns an instance of a proxy-channel connected to
 the given remote instance.
@@ -195,7 +195,7 @@ backend.  Returns the thread of the swank proxy server "
         (maybe-setf *swank-proxy-thread*
                     (bordeaux-threads:make-thread
                      (lambda ()
-                       (unwind-protect 
+                       (unwind-protect
                             (run-swank-proxy-loop channel emacs-connection)
                          (when (eql *swank-proxy-channel* channel)
                            (setf *swank-proxy-channel* nil))))
@@ -210,10 +210,10 @@ backend.  Returns the thread of the swank proxy server "
      (with-top-level-restart (connection (go start))
        (with-connection (connection)
          (loop
-           (destructure-case (wait-for-event `(:emacs-channel-send . _))
-             ((:emacs-channel-send c (selector &rest args))
-              (assert (eq c channel))
-              (channel-send channel selector args))))))))
+            (destructure-case (wait-for-event `(:emacs-channel-send . _))
+              ((:emacs-channel-send c (selector &rest args))
+               (assert (eq c channel))
+               (channel-send channel selector args))))))))
 
 
 ;;; eval-and-grab-output

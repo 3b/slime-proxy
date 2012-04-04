@@ -30,7 +30,7 @@
 (defun active-client-limit-ip (client)
   (if *allowed-active-client-ip*
       (string= (clws:client-host client)
-                             *allowed-active-client-ip*)
+               *allowed-active-client-ip*)
       t))
 
 ;; hook for validating 'active' clients
@@ -104,7 +104,7 @@ to do with swank proxy."
                                             `("MESSAGE"
                                               ,message
                                               ,@(when image
-                                                  (list "IMG" image))))
+                                                      (list "IMG" image))))
                                            s))))
 
 (defun log-to-active (res message &key image)
@@ -165,22 +165,23 @@ variable. If not set, \"/swank\" or any resource starting with
 
 (defun valid-data-url (string)
   (labels ((base64chars (start)
-             (loop for i from start below (length string)
-                   for c = (aref string i)
-                   ;; a-z A-Z 0-9 _-
-                   always (or (char<= #\a c #\z)
-                              (char<= #\A c #\Z)
-                              (char<= #\0 c #\9)
-                              ;; not sure exactly which set of
-                              ;; characters is valid, possibly should
-                              ;; at least reject whitespace?
-                              (char= c #\_)
-                              (char= c #\-)
-                              (char= c #\/)
-                              (char= c #\+)
-                              (char= c #\=)
-                              (char= c #\space)
-                              (char= c #\linefeed))))
+             (loop
+                for i from start below (length string)
+                for c = (aref string i)
+                ;; a-z A-Z 0-9 _-
+                always (or (char<= #\a c #\z)
+                           (char<= #\A c #\Z)
+                           (char<= #\0 c #\9)
+                           ;; not sure exactly which set of
+                           ;; characters is valid, possibly should
+                           ;; at least reject whitespace?
+                           (char= c #\_)
+                           (char= c #\-)
+                           (char= c #\/)
+                           (char= c #\+)
+                           (char= c #\=)
+                           (char= c #\space)
+                           (char= c #\linefeed))))
            (try-type (type)
              (and (alexandria:starts-with-subseq type string)
                   (base64chars (length type)))))
@@ -233,21 +234,21 @@ AAAFCAYAAACNbyblAAAAHElEQVQI12P4//8/w38GIAXDIBKE0DHxgljNBAAO
      (log-to-active res (format nil "image [~s]" (position client (resource-clients res))) :image message))
     ((eql client (active-client res))
      (let* ((string-for-emacs (format nil "[~s] ~s~%" (position client (resource-clients res)) message))
-             (r (ignore-errors (yason:parse message)))
-             (result (when (and r (hash-table-p r)) (gethash "RESULT" r)))
-             (id (when (and r (hash-table-p r)) (gethash "ID" r)))
-             (err (when (and r (hash-table-p r)) (gethash "ERROR" r))))
-        #++(format t "got frame ~s (~s)~%" data s)
-        (splog "got response ~s . ~s / ~s~%" result id err)
-        (if id
-            (let ((cont (gethash id *continuations*)))
-              (if cont
-                  (if err
-                      (funcall cont nil err)
-                      (funcall cont t result))
-                  #++(format t "got cont id ~s but no cont?~%" id))
-              (remhash id *continuations*))
-            (swank::send-to-emacs `(:write-string ,string-for-emacs :proxy)))))
+            (r (ignore-errors (yason:parse message)))
+            (result (when (and r (hash-table-p r)) (gethash "RESULT" r)))
+            (id (when (and r (hash-table-p r)) (gethash "ID" r)))
+            (err (when (and r (hash-table-p r)) (gethash "ERROR" r))))
+       #++(format t "got frame ~s (~s)~%" data s)
+       (splog "got response ~s . ~s / ~s~%" result id err)
+       (if id
+           (let ((cont (gethash id *continuations*)))
+             (if cont
+                 (if err
+                     (funcall cont nil err)
+                     (funcall cont t result))
+                 #++(format t "got cont id ~s but no cont?~%" id))
+             (remhash id *continuations*))
+           (swank::send-to-emacs `(:write-string ,string-for-emacs :proxy)))))
     (t
      (let* ((string-for-emacs (format nil "[~s] ~s~%" (position client (resource-clients res)) message)))
        (log-to-active res string-for-emacs)
@@ -330,20 +331,20 @@ okay or not, and (2) the result."
     (maybe-kill *swank-proxy-ws-thread* )
     (maybe-kill *swank-proxy-resource-thread*)
 
-  (let ((con swank::*emacs-connection*))
-    (maybe-setf *swank-proxy-ws-thread*
-                (bordeaux-threads:make-thread
-                 (lambda ()
-                   (swank::with-connection (con)
-                     (ws:run-server port)))
-                 :name "swank-proxy websockets server"))
+    (let ((con swank::*emacs-connection*))
+      (maybe-setf *swank-proxy-ws-thread*
+                  (bordeaux-threads:make-thread
+                   (lambda ()
+                     (swank::with-connection (con)
+                       (ws:run-server port)))
+                   :name "swank-proxy websockets server"))
 
-    (maybe-setf *swank-proxy-resource-thread*
-                (bordeaux-threads:make-thread
-                 (lambda ()
-                   (swank::with-connection (con)
-                     (run-swank-proxy-resource-server)))
-                 :name "swank-proxy resource handler"))))
+      (maybe-setf *swank-proxy-resource-thread*
+                  (bordeaux-threads:make-thread
+                   (lambda ()
+                     (swank::with-connection (con)
+                       (run-swank-proxy-resource-server)))
+                   :name "swank-proxy resource handler"))))
   (list *swank-proxy-ws-thread* *swank-proxy-resource-thread*))
 
 (defun run-swank-proxy-resource-server ()

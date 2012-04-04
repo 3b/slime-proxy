@@ -27,7 +27,7 @@
   ;; FIXME: use a per-buffer variable instead of a per-connection variable
   (let* ((slime-dispatching-connection (slime-proxy-connection)))
     (slime-connection-proxy-output-buffer)))
-           
+
 
 (defun slime-proxy-connection ()
   "Returns the most relevant proxy connection."
@@ -66,7 +66,7 @@ launch a REPL for the proxy."
     ;; now create the swank-side proxy listener
     (slime-eval-async
         `(swank:create-proxy-listener ,(slime-channel.id channel) ,target)
-      (slime-rcurry 
+      (slime-rcurry
        (lambda (result channel)
          (let ((slime-dispatching-connection (slime-connection)))
            (destructuring-bind (remote thread-id package prompt) result
@@ -122,7 +122,7 @@ launch a REPL for the proxy."
            (slime-send `(:emacs-channel-send
                          ,slime-proxy-most-recent-channel-id
                          (:proxy (:emacs-rex ,form ,package ,thread ,id))) )
-             
+
            ;; wrap the continuation to execute in the proxy's environment
            (lexical-let* ((original continuation)
                           (wrapped (lambda (result)
@@ -131,7 +131,7 @@ launch a REPL for the proxy."
                                         (funcall original result))))))
              (push (cons id wrapped)
                    (slime-rex-continuations)))
-                                        ;(message "adjusted continuations (added %i for %s): %s" 
+                                        ;(message "adjusted continuations (added %i for %s): %s"
                                         ;         id (slime-connection) (mapcar 'car (slime-rex-continuations)))
            (slime-recompute-modelines)))
         ((:buffer-first-change)
@@ -139,9 +139,9 @@ launch a REPL for the proxy."
         ((:operator-arglist )
          (message "slime-proxy ignorning slime: %s" event)
          nil)
-        ;;; fixme dont have proxy-event caught in two places.  Use
-        ;;; only the one below, and get rid of the if/else separating
-        ;;; these.
+;;; fixme dont have proxy-event caught in two places.  Use
+;;; only the one below, and get rid of the if/else separating
+;;; these.
         ((:proxy-event wrapped-event package prompt-string)
          (case wrapped-event
            (:new-package
@@ -198,14 +198,14 @@ launch a REPL for the proxy."
 
 (defun slime-show-arglist-ps ()
   (let ((op (slime-operator/form-before-point)))
-    (when op 
+    (when op
       (slime-eval-async `(swank:operator-arglist ,op ,(slime-current-package))
 			(lambda (arglist)
 			  (when arglist
 			    (slime-message "%s" arglist)))))))
 
 (defun slime-operator/form-before-point ()
-  (ignore-errors 
+  (ignore-errors
     (save-excursion
       (backward-up-list 1)
       (down-list 1)
