@@ -32,6 +32,10 @@
   (let ((w (gensym)))
     `(progn
        (defmacro ,(car (last scoped-name)) (&whole ,w ,@lambda-list)
+         (declare (ignore ,@(remove-if (lambda (a)
+                                         (member a '(&key &rest &optional
+                                                     &allow-other-keys)))
+                                       lambda-list)))
          `(funcall (ps:@ ,@',scoped-name) ,@(cdr ,w)))
        (setf (@ ,@scoped-name)
              (lambda ,lambda-list
