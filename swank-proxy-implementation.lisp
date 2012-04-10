@@ -166,6 +166,29 @@ fixme: this function has a very tentative interface"))
 (defvar *swank-proxy-channel* nil
   "Channel used to communicate between slime and swank.")
 
+(defvar *connection-channels* (make-hash-table)
+  "Store a list of channels we should clean up in
+ *connection-closed-hook* when a connection goes away")
+
+(defun kill-connection-channels (connection)
+  (let ((channels (gethash connection *connection-channels*)))
+    (when channels
+      (remhash connection *connection-channels*)
+      (loop for channel in channels
+           for thread = (channel-thread channel)
+           do (when (bordeaux-threads:thread-alive-p thread)
+                (bordeaux-threads:destroy-thread thread))
+           (when (and (boundp '*swank-proxy-thread*)
+                      (eq *swank-proxy-thread* thread))
+             ;; should this unbind instead?
+             ;; (is it even used anywhere for that matter?)
+             (setf *swank-proxy-thread* nil))))))
+
+(push 'kill-connection-channels swank::*connection-closed-hook*)
+
+#++
+(maphash (lambda (k v) (kill-connection-channels k)) *connection-channels*)
+
 (defun start-swank-proxy-server (remote-channel target emacs-connection &key kill-existing (port *swank-proxy-port*))
   "Spawns all the necessary threads to connect emacs up to a proxy
 backend.  Returns the thread of the swank proxy server "
@@ -201,6 +224,7 @@ backend.  Returns the thread of the swank proxy server "
                            (setf *swank-proxy-channel* nil))))
                      :name "swank-proxy-thread"))
         (setf (channel-thread channel) *swank-proxy-thread*)
+        (push channel (gethash emacs-connection *connection-channels* nil))
         (values *swank-proxy-thread* channel)))))
 
 (defun run-swank-proxy-loop  (channel connection)
