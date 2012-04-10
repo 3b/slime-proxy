@@ -136,7 +136,7 @@ variable. If not set, \"/swank\" or any resource starting with
 (defun check-resource-and-connection-token (resource-name query)
   ;; TODO: split up query command to allow for multiple criteria, like
   ;; specific page + auth token?
-  (splog "checking client resource, token=~s, got ~s / s~%" *resource-query-token*
+  (splog "checking client resource, token=~s, got ~s / ~s~%" *resource-query-token*
          resource-name query)
   (if *resource-query-token*
       (equalp query *resource-query-token*)
