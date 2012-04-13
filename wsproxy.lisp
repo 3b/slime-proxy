@@ -204,56 +204,63 @@ AAAFCAYAAACNbyblAAAAHElEQVQI12P4//8/w38GIAXDIBKE0DHxgljNBAAO
 
 (defmethod ws:resource-received-text ((res swank-proxy-resource) client message)
   (splog "got frame ~s~%" message)
+  ;; make sure we still have a valid slime connection...
+  ;;; fixme: figure out how to maintain the link to active slime
+  ;;; connection properly
+  ;;; 
+  (unless (member swank::*emacs-connection* swank::*connections*)
+    (setf swank::*emacs-connection* (swank::default-connection)))
+  (when swank::*emacs-connection*
+    (cond
+      ((and (eql client (active-client res))
+            (string= message "sync"))
+       (splog "clearing stale continuations...~%")
+       (loop for i in (loop for i being the hash-keys of *continuations*
+                            collect i)
+             for c = (gethash i *continuations*)
+             when c
+               do
+                  (swank::send-to-emacs
+                   `(:write-string
+                     ,(format nil "cancelling continuation ~s~^%" i)
+                     :proxy))
+                  (funcall c nil "cancelled")
+                  (remhash i *continuations*)))
+      ((and (string= message "activate"))
+       (cond
+         ((eql client (active-client res))
+          (log-to-client client "already active"))
+         ((authorize-active-client client)
+          (splog "switching active client...~%")
+          (activate-client res client))
+         (t
+          (log-to-client client "login failed"))))
+      ((string= message "kick me")
+       (ws:write-to-client-close client :code 31337 :message "Pwned"))
+      ((valid-data-url message)
+       (log-to-active res (format nil "image [~s]" (position client (resource-clients res))) :image message))
+      ((eql client (active-client res))
+       (let* ((string-for-emacs (format nil "[~s] ~s~%" (position client (resource-clients res)) message))
+              (r (ignore-errors (yason:parse message)))
+              (result (when (and r (hash-table-p r)) (gethash "RESULT" r)))
+              (id (when (and r (hash-table-p r)) (gethash "ID" r)))
+              (err (when (and r (hash-table-p r)) (gethash "ERROR" r))))
+         #++(format t "got frame ~s (~s)~%" data s)
+         (splog "got response ~s . ~s / ~s~%" result id err)
+         (if id
+             (let ((cont (gethash id *continuations*)))
+               (if cont
+                   (if err
+                       (funcall cont nil err)
+                       (funcall cont t result))
+                   #++(format t "got cont id ~s but no cont?~%" id))
+               (remhash id *continuations*))
+             (swank::send-to-emacs `(:write-string ,string-for-emacs :proxy)))))
+      (t
+       (let* ((string-for-emacs (format nil "[~s] ~s~%" (position client (resource-clients res)) message)))
+         (log-to-active res string-for-emacs)
 
-  (cond
-    ((and (eql client (active-client res))
-          (string= message "sync"))
-     (splog "clearing stale continuations...~%")
-     (loop for i in (loop for i being the hash-keys of *continuations*
-                       collect i)
-        for c = (gethash i *continuations*)
-        when c
-        do
-        (swank::send-to-emacs `(:write-string
-                                ,(format nil "cancelling continuation ~s~^%" i)
-                                :proxy))
-        (funcall c nil "cancelled")
-        (remhash i *continuations*)))
-    ((and (string= message "activate"))
-     (cond
-       ((eql client (active-client res))
-        (log-to-client client "already active"))
-       ((authorize-active-client client)
-        (splog "switching active client...~%")
-        (activate-client res client))
-       (t
-        (log-to-client client "login failed"))))
-    ((string= message "kick me")
-     (ws:write-to-client-close client :code 31337 :message "Pwned"))
-    ((valid-data-url message)
-     (log-to-active res (format nil "image [~s]" (position client (resource-clients res))) :image message))
-    ((eql client (active-client res))
-     (let* ((string-for-emacs (format nil "[~s] ~s~%" (position client (resource-clients res)) message))
-            (r (ignore-errors (yason:parse message)))
-            (result (when (and r (hash-table-p r)) (gethash "RESULT" r)))
-            (id (when (and r (hash-table-p r)) (gethash "ID" r)))
-            (err (when (and r (hash-table-p r)) (gethash "ERROR" r))))
-       #++(format t "got frame ~s (~s)~%" data s)
-       (splog "got response ~s . ~s / ~s~%" result id err)
-       (if id
-           (let ((cont (gethash id *continuations*)))
-             (if cont
-                 (if err
-                     (funcall cont nil err)
-                     (funcall cont t result))
-                 #++(format t "got cont id ~s but no cont?~%" id))
-             (remhash id *continuations*))
-           (swank::send-to-emacs `(:write-string ,string-for-emacs :proxy)))))
-    (t
-     (let* ((string-for-emacs (format nil "[~s] ~s~%" (position client (resource-clients res)) message)))
-       (log-to-active res string-for-emacs)
-
-       (swank::send-to-emacs `(:write-string ,string-for-emacs :proxy))))))
+         (swank::send-to-emacs `(:write-string ,string-for-emacs :proxy)))))))
 
 ;; fixme: make this actually be thread-safe.  To do so we should
 ;; probably improve how message-passing works in clws and use some
